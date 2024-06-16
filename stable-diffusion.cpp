@@ -2283,9 +2283,6 @@ sd_image_t* gen_go(sd_ctx_t* sd_ctx, const char* prompt, int width, int height) 
         sd_ctx->sd->cond_stage_model->free_params_buffer();
     }
 
-    // Control net hint
-    struct ggml_tensor* image_hint = NULL;
-
     // Sample
     int C = 4;
     int W = width / 8;
@@ -2319,7 +2316,8 @@ sd_image_t* gen_go(sd_ctx_t* sd_ctx, const char* prompt, int width, int height) 
     if (sd_ctx->sd->free_params_immediately && !sd_ctx->sd->use_tiny_autoencoder) {
         sd_ctx->sd->first_stage_model->free_params_buffer();
     }
-    sd_image_t* result_images = (sd_image_t*)calloc(1, sizeof(sd_image_t));
+
+    auto result_images = (sd_image_t*)calloc(1, sizeof(sd_image_t));
     if (result_images == NULL) {
         ggml_free(work_ctx);
         return NULL;
