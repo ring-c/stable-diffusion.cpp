@@ -168,6 +168,8 @@ SD_API sd_image_t* img2img(sd_ctx_t* sd_ctx,
                            bool normalize_input,
                            const char* input_id_images_path);
 
+SD_API sd_image_t* gen_go(sd_ctx_t* sd_ctx);
+
 SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
                            sd_image_t init_image,
                            int width,
