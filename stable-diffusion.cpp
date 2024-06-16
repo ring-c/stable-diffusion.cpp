@@ -1378,11 +1378,7 @@ public:
         return x;
     }
 
-    ggml_tensor* sample_go(ggml_context* work_ctx,
-                           ggml_tensor* x_t,
-                           ggml_tensor* c,
-                           ggml_tensor* c_vector,
-                           const std::vector<float>& sigmas) {
+    ggml_tensor* sample_go(ggml_context* work_ctx, ggml_tensor* x_t, ggml_tensor* c, ggml_tensor* c_vector, const std::vector<float>& sigmas) {
         ggml_tensor* c_concat = NULL;
         int start_merge_step  = -1;
 
@@ -2256,28 +2252,19 @@ SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
     return result_images;
 }
 
-sd_image_t* gen_go(sd_ctx_t* sd_ctx) {
-    //    sd_image_t init_image,
-    const char* prompt          = "autumn forest";
+sd_image_t* gen_go(sd_ctx_t* sd_ctx, const char* prompt, int width, int height) {
     const char* negative_prompt = "";
     int clip_skip               = 2;
     float cfg_scale             = 1.0;
-    int width                   = 512;
-    int height                  = 512;
-    auto sample_method_t        = EULER_A;
     int sample_steps_input      = 16;
     int64_t seed                = 42;
 
     struct ggml_init_params params;
-    params.mem_size = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
-    if (sd_ctx->sd->stacked_id) {
-        params.mem_size += static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
-    }
+    params.mem_size = static_cast<size_t>(10 * 1024 * 1024);
     params.mem_size += width * height * 3 * sizeof(float);
     params.mem_size *= 1;
     params.mem_buffer = NULL;
     params.no_alloc   = false;
-    // LOG_DEBUG("mem_size %u ", params.mem_size);
 
     struct ggml_context* work_ctx = ggml_init(params);
     if (!work_ctx) {
@@ -2285,36 +2272,9 @@ sd_image_t* gen_go(sd_ctx_t* sd_ctx) {
         return NULL;
     }
 
-    size_t t0 = ggml_time_ms();
-
     std::vector<float> sigmas = sd_ctx->sd->denoiser->schedule->get_sigmas(sample_steps_input);
 
-    /*
-    sd_image_t* result_images = generate_image(sd_ctx,
-                                               work_ctx,
-                                               NULL,
-                                               prompt_c_str,
-                                               negative_prompt_c_str,
-                                               clip_skip,
-                                               cfg_scale,
-                                               width,
-                                               height,
-                                               sample_method,
-                                               sigmas,
-                                               seed,
-                                               batch_count,
-                                               control_cond,
-                                               control_strength,
-                                               style_ratio,
-                                               normalize_input,
-                                               input_id_images_path_c_str);
-
-    */
-
-    int sample_steps = sigmas.size() - 1;
-
     // Get learned condition
-
     auto cond_pair        = sd_ctx->sd->get_learned_condition(work_ctx, prompt, clip_skip, width, height);
     ggml_tensor* c        = cond_pair.first;
     ggml_tensor* c_vector = cond_pair.second;  // [adm_in_channels, ]
@@ -2347,7 +2307,6 @@ sd_image_t* gen_go(sd_ctx_t* sd_ctx) {
     if (sd_ctx->sd->free_params_immediately) {
         sd_ctx->sd->diffusion_model->free_params_buffer();
     }
-    int64_t t3 = ggml_time_ms();
 
     // Decode to image
     std::vector<struct ggml_tensor*> decoded_images;  // collect decoded images
@@ -2356,8 +2315,7 @@ sd_image_t* gen_go(sd_ctx_t* sd_ctx) {
         decoded_images.push_back(img);
     }
 
-    int64_t t4 = ggml_time_ms();
-    LOG_INFO("decode_first_stage completed, taking %.2fs", (t4 - t3) * 1.0f / 1000);
+    LOG_INFO("decode_first_stage completed");
     if (sd_ctx->sd->free_params_immediately && !sd_ctx->sd->use_tiny_autoencoder) {
         sd_ctx->sd->first_stage_model->free_params_buffer();
     }
