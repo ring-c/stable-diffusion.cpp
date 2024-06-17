@@ -1398,24 +1398,13 @@ public:
         struct ggml_tensor* denoised = ggml_dup_tensor(work_ctx, x);
 
         auto denoise = [&](ggml_tensor* input, float sigma, int step) {
-            if (step == 1) {
-                pretty_progress(0, (int)steps, 0);
-            }
-            int64_t t0 = ggml_time_us();
-
             float c_skip               = 1.0f;
             float c_out                = 1.0f;
             float c_in                 = 1.0f;
             std::vector<float> scaling = denoiser->get_scalings(sigma);
 
-            if (scaling.size() == 3) {  // CompVisVDenoiser
-                c_skip = scaling[0];
-                c_out  = scaling[1];
-                c_in   = scaling[2];
-            } else {  // CompVisDenoiser
-                c_out = scaling[0];
-                c_in  = scaling[1];
-            }
+            c_out = scaling[0];
+            c_in  = scaling[1];
 
             float t = denoiser->schedule->sigma_to_t(sigma);
             std::vector<float> timesteps_vec(x->ne[3], t);  // [N, ]
@@ -1452,8 +1441,6 @@ public:
                                          &out_cond);
             }
 
-            float* negative_data = NULL;
-
             float* vec_denoised  = (float*)denoised->data;
             float* vec_input     = (float*)input->data;
             float* positive_data = (float*)out_cond->data;
@@ -1461,10 +1448,6 @@ public:
             for (int i = 0; i < ne_elements; i++) {
                 float latent_result = positive_data[i];
                 vec_denoised[i]     = latent_result * c_out + vec_input[i] * c_skip;
-            }
-            int64_t t1 = ggml_time_us();
-            if (step > 0) {
-                pretty_progress(step, (int)steps, (t1 - t0) / 1000000.f);
             }
         };
 
@@ -1489,32 +1472,28 @@ public:
             }
 
             // get_ancestral_step
-            float sigma_up   = std::min(sigmas[i + 1],
-                                        std::sqrt(sigmas[i + 1] * sigmas[i + 1] * (sigmas[i] * sigmas[i] - sigmas[i + 1] * sigmas[i + 1]) / (sigmas[i] * sigmas[i])));
+            float sigma_up   = std::min(sigmas[i + 1], std::sqrt(sigmas[i + 1] * sigmas[i + 1] * (sigmas[i] * sigmas[i] - sigmas[i + 1] * sigmas[i + 1]) / (sigmas[i] * sigmas[i])));
             float sigma_down = std::sqrt(sigmas[i + 1] * sigmas[i + 1] - sigma_up * sigma_up);
 
             // Euler method
             float dt = sigma_down - sigmas[i];
-            // x = x + d * dt
             {
                 float* vec_d = (float*)d->data;
                 float* vec_x = (float*)x->data;
 
-                for (int i = 0; i < ggml_nelements(x); i++) {
-                    vec_x[i] = vec_x[i] + vec_d[i] * dt;
+                for (int ii = 0; ii < ggml_nelements(x); ii++) {
+                    vec_x[ii] = vec_x[ii] + vec_d[ii] * dt;
                 }
             }
 
             if (sigmas[i + 1] > 0) {
-                // x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
                 ggml_tensor_set_f32_randn(noise, rng);
-                // noise = load_tensor_from_file(work_ctx, "./rand" + std::to_string(i+1) + ".bin");
                 {
                     float* vec_x     = (float*)x->data;
                     float* vec_noise = (float*)noise->data;
 
-                    for (int i = 0; i < ggml_nelements(x); i++) {
-                        vec_x[i] = vec_x[i] + vec_noise[i] * sigma_up;
+                    for (int ii = 0; ii < ggml_nelements(x); ii++) {
+                        vec_x[ii] = vec_x[ii] + vec_noise[ii] * sigma_up;
                     }
                 }
             }
