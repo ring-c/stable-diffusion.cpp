@@ -1417,6 +1417,8 @@ public:
 
             std::vector<struct ggml_tensor*> controls;
 
+            fprintf(stderr, "\nGO WILD #2\n");
+
             if (start_merge_step == -1 || step <= start_merge_step) {
                 // cond
                 diffusion_model->compute(n_threads,
@@ -1442,6 +1444,8 @@ public:
                                          &out_cond);
             }
 
+            fprintf(stderr, "\nGO WILD #3\n");
+
             float* vec_denoised  = (float*)denoised->data;
             float* vec_input     = (float*)input->data;
             float* positive_data = (float*)out_cond->data;
@@ -1458,8 +1462,11 @@ public:
         for (int i = 0; i < steps; i++) {
             float sigma = sigmas[i];
 
+            fprintf(stderr, "\nGO #0\n");
+
             // denoise
             denoise(x, sigma, i + 1);
+            fprintf(stderr, "\nGO #1\n");
 
             // d = (x - denoised) / sigma
             {
@@ -2241,6 +2248,14 @@ ggml_tensor* go_pair_get(std::pair<ggml_tensor*, ggml_tensor*> pair, bool first)
         return pair.first;
     }
     return pair.second;
+}
+
+ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, ggml_tensor* c, ggml_tensor* c_vector, int sigmasCnt, const float sigmas[]) {
+    std::vector<float> sigmasC(sigmasCnt);
+    for (int i = 0; i < sigmasCnt; ++i) {
+        sigmasC[i] = sigmas[i];
+    }
+    return sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmasC);
 }
 
 sd_image_t* gen_go(sd_ctx_t* sd_ctx, const char* prompt, int width, int height) {

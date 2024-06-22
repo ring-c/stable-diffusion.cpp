@@ -19,6 +19,7 @@
 #endif
 #endif
 
+#include <vector>
 #include "utility"
 
 #ifdef __cplusplus
@@ -179,6 +180,8 @@ SD_API sd_image_t* gen_go(sd_ctx_t* sd_ctx,
                           const char* prompt,
                           int width,
                           int height);
+
+SD_API ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, ggml_tensor* c, ggml_tensor* c_vector, int sigmasCnt, const float sigmas[]);
 
 SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
                            sd_image_t init_image,
