@@ -14,6 +14,7 @@
 #include "pmid.hpp"
 #include "tae.hpp"
 #include "unet.hpp"
+#include "utility"
 #include "vae.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -2231,9 +2232,19 @@ SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
     return result_images;
 }
 
+std::pair<ggml_tensor*, ggml_tensor*> go_get_learned_condition(sd_ctx_t* sd_ctx, ggml_context* work_ctx, const char* prompt, int width, int height, int clip_skip = 2) {
+    return sd_ctx->sd->get_learned_condition(work_ctx, prompt, clip_skip, width, height);
+}
+
+ggml_tensor* go_pair_get(std::pair<ggml_tensor*, ggml_tensor*> pair, bool first) {
+    if (first) {
+        return pair.first;
+    }
+    return pair.second;
+}
+
 sd_image_t* gen_go(sd_ctx_t* sd_ctx, const char* prompt, int width, int height) {
     const char* negative_prompt = "";
-    int clip_skip               = 2;
     float cfg_scale             = 1.0;
     int sample_steps_input      = 16;
     int64_t seed                = 42;
@@ -2254,7 +2265,7 @@ sd_image_t* gen_go(sd_ctx_t* sd_ctx, const char* prompt, int width, int height) 
     std::vector<float> sigmas = sd_ctx->sd->denoiser->schedule->get_sigmas(sample_steps_input);
 
     // Get learned condition
-    auto cond_pair        = sd_ctx->sd->get_learned_condition(work_ctx, prompt, clip_skip, width, height);
+    auto cond_pair        = sd_ctx->sd->get_learned_condition(work_ctx, prompt, 2, width, height);
     ggml_tensor* c        = cond_pair.first;
     ggml_tensor* c_vector = cond_pair.second;  // [adm_in_channels, ]
 

@@ -19,10 +19,13 @@
 #endif
 #endif
 
+#include "utility"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#include <ggml.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -167,6 +170,10 @@ SD_API sd_image_t* img2img(sd_ctx_t* sd_ctx,
                            float style_strength,
                            bool normalize_input,
                            const char* input_id_images_path);
+
+SD_API std::pair<ggml_tensor*, ggml_tensor*> go_get_learned_condition(sd_ctx_t* sd_ctx, ggml_context* work_ctx, const char* prompt, int width, int height, int clip_skip);
+
+SD_API ggml_tensor* go_pair_get(std::pair<ggml_tensor*, ggml_tensor*> pair, bool first);
 
 SD_API sd_image_t* gen_go(sd_ctx_t* sd_ctx,
                           const char* prompt,
