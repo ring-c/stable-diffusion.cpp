@@ -1591,6 +1591,11 @@ public:
     ggml_tensor* decode_first_stage(ggml_context* work_ctx, ggml_tensor* x) {
         return compute_first_stage(work_ctx, x, true);
     }
+
+    void go_decode_first_stage(ggml_context* work_ctx, ggml_tensor* input, ggml_tensor* output) {
+        first_stage_model->compute(n_threads, input, true, &output);
+        first_stage_model->free_compute_buffer();
+    }
 };
 
 /*================================================= SD API ==================================================*/
@@ -2231,7 +2236,7 @@ SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
     return result_images;
 }
 
-uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmas[]) {
+ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, const int sigmasCnt, const float sigmas[]) {
     std::vector<float> sigmasC(sigmasCnt);
     for (int i = 0; i < sigmasCnt; ++i) {
         sigmasC[i] = sigmas[i];
@@ -2242,8 +2247,9 @@ uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, c
     ggml_tensor* c        = cond_pair.first;
     ggml_tensor* c_vector = cond_pair.second;
 
-    ggml_tensor* x0  = sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmasC);
-    ggml_tensor* img = sd_ctx->sd->decode_first_stage(work_ctx, x0);
+    return sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmasC);
+}
 
-    return sd_tensor_to_image(img);
+void go_decode_first_stage(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* input, ggml_tensor* output) {
+    sd_ctx->sd->go_decode_first_stage(work_ctx, input, output);
 }

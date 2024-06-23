@@ -172,7 +172,9 @@ SD_API sd_image_t* img2img(sd_ctx_t* sd_ctx,
                            bool normalize_input,
                            const char* input_id_images_path);
 
-SD_API uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmas[]);
+SD_API ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, const int sigmasCnt, const float sigmas[]);
+
+SD_API void go_decode_first_stage(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* input, ggml_tensor* output);
 
 SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
                            sd_image_t init_image,
