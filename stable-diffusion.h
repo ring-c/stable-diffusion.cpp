@@ -172,15 +172,6 @@ SD_API sd_image_t* img2img(sd_ctx_t* sd_ctx,
                            bool normalize_input,
                            const char* input_id_images_path);
 
-// SD_API std::pair<ggml_tensor*, ggml_tensor*> go_get_learned_condition(sd_ctx_t* sd_ctx, ggml_context* work_ctx, const char* prompt, int width, int height, int clip_skip);
-
-// SD_API ggml_tensor* go_pair_get(std::pair<ggml_tensor*, ggml_tensor*> pair, bool first);
-
-SD_API sd_image_t* gen_go(sd_ctx_t* sd_ctx,
-                          const char* prompt,
-                          int width,
-                          int height);
-
 SD_API uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmas[]);
 
 SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,

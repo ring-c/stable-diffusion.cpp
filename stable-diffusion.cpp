@@ -2234,98 +2234,16 @@ SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
 uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmas[]) {
     std::vector<float> sigmasC(sigmasCnt);
     for (int i = 0; i < sigmasCnt; ++i) {
-        //        fprintf(stderr, "\nsigmas %d:%f", i, sigmas[i]);
         sigmasC[i] = sigmas[i];
     }
 
-    auto cond_pair = sd_ctx->sd->get_learned_condition(work_ctx, prompt, 2, 768, 768);
+    auto cond_pair = sd_ctx->sd->get_learned_condition(work_ctx, prompt, 2, 768, 1024);
 
     ggml_tensor* c        = cond_pair.first;
     ggml_tensor* c_vector = cond_pair.second;
 
-    auto x0  = sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmasC);
-    auto img = sd_ctx->sd->decode_first_stage(work_ctx, x0);
+    ggml_tensor* x0  = sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmasC);
+    ggml_tensor* img = sd_ctx->sd->decode_first_stage(work_ctx, x0);
 
     return sd_tensor_to_image(img);
-}
-
-sd_image_t* gen_go(sd_ctx_t* sd_ctx, const char* prompt, int width, int height) {
-    const char* negative_prompt = "";
-    float cfg_scale             = 1.0;
-    int sample_steps_input      = 16;
-    int64_t seed                = 42;
-
-    struct ggml_init_params params;
-    params.mem_size = static_cast<size_t>(10 * 1024 * 1024);
-    params.mem_size += width * height * 3 * sizeof(float);
-    params.mem_size *= 1;
-    params.mem_buffer = NULL;
-    params.no_alloc   = false;
-
-    struct ggml_context* work_ctx = ggml_init(params);
-    if (!work_ctx) {
-        LOG_ERROR("ggml_init() failed");
-        return NULL;
-    }
-
-    std::vector<float> sigmas = sd_ctx->sd->denoiser->schedule->get_sigmas(sample_steps_input);
-
-    // Get learned condition
-    auto cond_pair        = sd_ctx->sd->get_learned_condition(work_ctx, prompt, 2, width, height);
-    ggml_tensor* c        = cond_pair.first;
-    ggml_tensor* c_vector = cond_pair.second;  // [adm_in_channels, ]
-
-    if (sd_ctx->sd->free_params_immediately) {
-        sd_ctx->sd->cond_stage_model->free_params_buffer();
-    }
-
-    // Sample
-    int C = 4;
-    int W = width / 8;
-    int H = height / 8;
-
-    // BATCH START
-
-    sd_ctx->sd->rng->manual_seed(seed);
-    struct ggml_tensor* x_t = NULL;
-
-    // init_latent == NULL
-    x_t = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
-    ggml_tensor_set_f32_randn(x_t, sd_ctx->sd->rng);
-
-    struct ggml_tensor* x_0 = sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmas);
-
-    // BATCH END
-
-    if (sd_ctx->sd->free_params_immediately) {
-        sd_ctx->sd->diffusion_model->free_params_buffer();
-    }
-
-    // Decode to image
-    std::vector<struct ggml_tensor*> decoded_images;  // collect decoded images
-    struct ggml_tensor* img = sd_ctx->sd->decode_first_stage(work_ctx, x_0);
-    if (img != NULL) {
-        decoded_images.push_back(img);
-    }
-
-    LOG_INFO("decode_first_stage completed");
-    if (sd_ctx->sd->free_params_immediately && !sd_ctx->sd->use_tiny_autoencoder) {
-        sd_ctx->sd->first_stage_model->free_params_buffer();
-    }
-
-    auto result_images = (sd_image_t*)calloc(1, sizeof(sd_image_t));
-    if (result_images == NULL) {
-        ggml_free(work_ctx);
-        return NULL;
-    }
-
-    for (size_t i = 0; i < decoded_images.size(); i++) {
-        result_images[i].width   = width;
-        result_images[i].height  = height;
-        result_images[i].channel = 3;
-        result_images[i].data    = sd_tensor_to_image(decoded_images[i]);
-    }
-    ggml_free(work_ctx);
-
-    return result_images;
 }
