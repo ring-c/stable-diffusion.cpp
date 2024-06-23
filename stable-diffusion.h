@@ -181,7 +181,7 @@ SD_API sd_image_t* gen_go(sd_ctx_t* sd_ctx,
                           int width,
                           int height);
 
-SD_API uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, int sigmasCnt, const float sigmas[]);
+SD_API uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmas[]);
 
 SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
                            sd_image_t init_image,

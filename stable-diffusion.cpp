@@ -2231,14 +2231,14 @@ SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
     return result_images;
 }
 
-uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, int sigmasCnt, const float sigmas[]) {
+uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmas[]) {
     std::vector<float> sigmasC(sigmasCnt);
     for (int i = 0; i < sigmasCnt; ++i) {
         //        fprintf(stderr, "\nsigmas %d:%f", i, sigmas[i]);
         sigmasC[i] = sigmas[i];
     }
 
-    auto cond_pair = sd_ctx->sd->get_learned_condition(work_ctx, "cat", 2, 768, 768);
+    auto cond_pair = sd_ctx->sd->get_learned_condition(work_ctx, prompt, 2, 768, 768);
 
     ggml_tensor* c        = cond_pair.first;
     ggml_tensor* c_vector = cond_pair.second;
