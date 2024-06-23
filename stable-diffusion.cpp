@@ -1417,8 +1417,6 @@ public:
 
             std::vector<struct ggml_tensor*> controls;
 
-            fprintf(stderr, "\nGO WILD #2\n");
-
             if (start_merge_step == -1 || step <= start_merge_step) {
                 // cond
                 diffusion_model->compute(n_threads,
@@ -1444,8 +1442,6 @@ public:
                                          &out_cond);
             }
 
-            fprintf(stderr, "\nGO WILD #3\n");
-
             float* vec_denoised  = (float*)denoised->data;
             float* vec_input     = (float*)input->data;
             float* positive_data = (float*)out_cond->data;
@@ -1461,12 +1457,8 @@ public:
 
         for (int i = 0; i < steps; i++) {
             float sigma = sigmas[i];
-
-            fprintf(stderr, "\nGO #0\n");
-
             // denoise
             denoise(x, sigma, i + 1);
-            fprintf(stderr, "\nGO #1\n");
 
             // d = (x - denoised) / sigma
             {
@@ -2239,23 +2231,22 @@ SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
     return result_images;
 }
 
-std::pair<ggml_tensor*, ggml_tensor*> go_get_learned_condition(sd_ctx_t* sd_ctx, ggml_context* work_ctx, const char* prompt, int width, int height, int clip_skip = 2) {
-    return sd_ctx->sd->get_learned_condition(work_ctx, prompt, clip_skip, width, height);
-}
-
-ggml_tensor* go_pair_get(std::pair<ggml_tensor*, ggml_tensor*> pair, bool first) {
-    if (first) {
-        return pair.first;
-    }
-    return pair.second;
-}
-
-ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, ggml_tensor* c, ggml_tensor* c_vector, int sigmasCnt, const float sigmas[]) {
+uint8_t* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, int sigmasCnt, const float sigmas[]) {
     std::vector<float> sigmasC(sigmasCnt);
     for (int i = 0; i < sigmasCnt; ++i) {
+        //        fprintf(stderr, "\nsigmas %d:%f", i, sigmas[i]);
         sigmasC[i] = sigmas[i];
     }
-    return sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmasC);
+
+    auto cond_pair = sd_ctx->sd->get_learned_condition(work_ctx, "cat", 2, 768, 768);
+
+    ggml_tensor* c        = cond_pair.first;
+    ggml_tensor* c_vector = cond_pair.second;
+
+    auto x0  = sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmasC);
+    auto img = sd_ctx->sd->decode_first_stage(work_ctx, x0);
+
+    return sd_tensor_to_image(img);
 }
 
 sd_image_t* gen_go(sd_ctx_t* sd_ctx, const char* prompt, int width, int height) {

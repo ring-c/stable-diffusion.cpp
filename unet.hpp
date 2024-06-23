@@ -561,17 +561,10 @@ struct UNetModel : public GGMLModule {
             num_video_frames = x->ne[3];
         }
 
-        fprintf(stderr, "\nto_backend #1\n");
-
-        x = to_backend(x);
-
-        context = to_backend(context);
-        fprintf(stderr, "\nto_backend #AAA\n");
-
+        x         = to_backend(x);
+        context   = to_backend(context);
         y         = to_backend(y);
         timesteps = to_backend(timesteps);
-
-        fprintf(stderr, "\nto_backend #2\n");
 
         for (int i = 0; i < controls.size(); i++) {
             controls[i] = to_backend(controls[i]);
