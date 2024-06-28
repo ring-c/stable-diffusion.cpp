@@ -2266,3 +2266,11 @@ ggml_tensor* go_pair_get(std::pair<ggml_tensor*, ggml_tensor*> pair, bool first)
 void go_decode_first_stage(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* input, ggml_tensor* output) {
     sd_ctx->sd->go_decode_first_stage(work_ctx, input, output);
 }
+
+void apply_loras(sd_ctx_t* sd_ctx) {
+    std::unordered_map<std::string, float> loras;
+
+    loras["Expressive_H"] = 1.1;
+
+    sd_ctx->sd->apply_loras(loras);
+}
