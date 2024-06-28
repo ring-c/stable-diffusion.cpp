@@ -177,7 +177,7 @@ SD_API ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_ten
 SD_API std::pair<ggml_tensor*, ggml_tensor*> go_get_learned_condition(sd_ctx_t* sd_ctx, ggml_context* work_ctx, const char* prompt, int clip_skip, int width, int height);
 
 SD_API void go_decode_first_stage(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* input, ggml_tensor* output);
-SD_API void apply_loras(sd_ctx_t* sd_ctx);
+SD_API void apply_lora(sd_ctx_t* sd_ctx, const char* lora);
 
 SD_API ggml_tensor* go_pair_get(std::pair<ggml_tensor*, ggml_tensor*> pair, bool first);
 

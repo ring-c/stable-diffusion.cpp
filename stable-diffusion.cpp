@@ -2267,10 +2267,15 @@ void go_decode_first_stage(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor
     sd_ctx->sd->go_decode_first_stage(work_ctx, input, output);
 }
 
-void apply_loras(sd_ctx_t* sd_ctx) {
-    std::unordered_map<std::string, float> loras;
+void apply_lora(sd_ctx_t* sd_ctx, const char* lora) {
+    std::unordered_map<std::string, float> loraData;
 
-    loras["Expressive_H"] = 1.1;
+    auto result_pair                                = extract_and_remove_lora(lora);
+    std::unordered_map<std::string, float> lora_f2m = result_pair.first;  // lora_name -> multiplier
 
-    sd_ctx->sd->apply_loras(loras);
+    for (auto& kv : lora_f2m) {
+        LOG_DEBUG("lora %s:%.2f", kv.first.c_str(), kv.second);
+    }
+
+    sd_ctx->sd->apply_loras(lora_f2m);
 }
