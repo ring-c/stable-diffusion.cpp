@@ -70,6 +70,8 @@ public:
     ggml_backend_t vae_backend         = NULL;
     ggml_type model_data_type          = GGML_TYPE_COUNT;
 
+    std::pair<ggml_tensor*, ggml_tensor*> learned_condition;
+
     SDVersion version;
     bool vae_decode_only         = false;
     bool free_params_immediately = false;
@@ -627,6 +629,13 @@ public:
         std::vector<int>& tokens    = tokens_and_weights.first;
         std::vector<float>& weights = tokens_and_weights.second;
         return get_learned_condition_common(work_ctx, tokens, weights, clip_skip, width, height, force_zero_embeddings);
+    }
+
+    void go_get_learned_condition(ggml_context* work_ctx, const std::string& text, int clip_skip, int width, int height, bool force_zero_embeddings = false) {
+        auto tokens_and_weights     = cond_stage_model->tokenize(text, true);
+        std::vector<int>& tokens    = tokens_and_weights.first;
+        std::vector<float>& weights = tokens_and_weights.second;
+        learned_condition           = get_learned_condition_common(work_ctx, tokens, weights, clip_skip, width, height, force_zero_embeddings);
     }
 
     std::pair<ggml_tensor*, ggml_tensor*> get_learned_condition_common(ggml_context* work_ctx,
@@ -2234,7 +2243,6 @@ SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
     return result_images;
 }
 
-// ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, ggml_tensor* c, ggml_tensor* c_vector, const char* prompt, int sigmasCnt, const float sigmasGo[]) {
 ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmasGo[]) {
     //    fprintf(stderr, "\n sigmasCnt %d\n", sigmasCnt);
 
