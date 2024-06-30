@@ -172,14 +172,10 @@ SD_API sd_image_t* img2img(sd_ctx_t* sd_ctx,
                            bool normalize_input,
                            const char* input_id_images_path);
 
+// SD_API ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, ggml_tensor* c, ggml_tensor* c_vector, const char* prompt, int sigmasCnt, const float sigmas[]);
 SD_API ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmas[]);
-
-SD_API std::pair<ggml_tensor*, ggml_tensor*> go_get_learned_condition(sd_ctx_t* sd_ctx, ggml_context* work_ctx, const char* prompt, int clip_skip, int width, int height);
-
 SD_API void go_decode_first_stage(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* input, ggml_tensor* output);
 SD_API void apply_lora(sd_ctx_t* sd_ctx, const char* lora);
-
-SD_API ggml_tensor* go_pair_get(std::pair<ggml_tensor*, ggml_tensor*> pair, bool first);
 
 SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
                            sd_image_t init_image,

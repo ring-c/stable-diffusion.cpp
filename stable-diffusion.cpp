@@ -2234,31 +2234,20 @@ SD_API sd_image_t* img2vid(sd_ctx_t* sd_ctx,
     return result_images;
 }
 
-ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmas[]) {
+// ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, ggml_tensor* c, ggml_tensor* c_vector, const char* prompt, int sigmasCnt, const float sigmasGo[]) {
+ggml_tensor* go_sample(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* x_t, const char* prompt, int sigmasCnt, const float sigmasGo[]) {
     //    fprintf(stderr, "\n sigmasCnt %d\n", sigmasCnt);
 
-    std::vector<float> sigmasC(sigmasCnt);
+    std::vector<float> sigmas(sigmasCnt);
     for (int i = 0; i < sigmasCnt; ++i) {
-        sigmasC[i] = sigmas[i];
+        sigmas[i] = sigmasGo[i];
     }
 
-    auto cond_pair = sd_ctx->sd->get_learned_condition(work_ctx, prompt, 2, 768, 1024);
-
+    auto cond_pair        = sd_ctx->sd->get_learned_condition(work_ctx, prompt, 2, 768, 1024);
     ggml_tensor* c        = cond_pair.first;
     ggml_tensor* c_vector = cond_pair.second;
 
-    return sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmasC);
-}
-
-std::pair<ggml_tensor*, ggml_tensor*> go_get_learned_condition(sd_ctx_t* sd_ctx, ggml_context* work_ctx, const char* prompt, int clip_skip, int width, int height) {
-    return sd_ctx->sd->get_learned_condition(work_ctx, prompt, clip_skip, width, height);
-}
-
-ggml_tensor* go_pair_get(std::pair<ggml_tensor*, ggml_tensor*> pair, bool first) {
-    if (first) {
-        return pair.first;
-    }
-    return pair.second;
+    return sd_ctx->sd->sample_go(work_ctx, x_t, c, c_vector, sigmas);
 }
 
 void go_decode_first_stage(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor* input, ggml_tensor* output) {
