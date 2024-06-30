@@ -1402,7 +1402,6 @@ public:
 
         // denoise wrapper
         struct ggml_tensor* out_cond = ggml_dup_tensor(work_ctx, x);
-
         struct ggml_tensor* denoised = ggml_dup_tensor(work_ctx, x);
 
         auto denoise = [&](ggml_tensor* input, float sigma, int step) {
@@ -1463,18 +1462,19 @@ public:
         struct ggml_tensor* d     = ggml_dup_tensor(work_ctx, x);
 
         for (int i = 0; i < steps; i++) {
+            LOG_DEBUG("step %d", i + 1);
+
             float sigma = sigmas[i];
-            // denoise
             denoise(x, sigma, i + 1);
 
             // d = (x - denoised) / sigma
             {
-                float* vec_d        = (float*)d->data;
-                float* vec_x        = (float*)x->data;
-                float* vec_denoised = (float*)denoised->data;
+                auto vec_d        = (float*)d->data;
+                auto vec_x        = (float*)x->data;
+                auto vec_denoised = (float*)denoised->data;
 
-                for (int i = 0; i < ggml_nelements(d); i++) {
-                    vec_d[i] = (vec_x[i] - vec_denoised[i]) / sigma;
+                for (int iv = 0; iv < ggml_nelements(d); iv++) {
+                    vec_d[iv] = (vec_x[iv] - vec_denoised[iv]) / sigma;
                 }
             }
 
