@@ -1380,8 +1380,7 @@ public:
     }
 
     ggml_tensor* sample_go(ggml_context* work_ctx, ggml_tensor* x_t, ggml_tensor* c, ggml_tensor* c_vector, const std::vector<float>& sigmas) {
-        ggml_tensor* c_concat = NULL;
-        int start_merge_step  = -1;
+        int start_merge_step = -1;
 
         size_t steps = sigmas.size() - 1;
 
@@ -1393,8 +1392,7 @@ public:
         ggml_tensor_scale(x, sigmas[0]);
 
         // denoise wrapper
-        struct ggml_tensor* out_cond   = ggml_dup_tensor(work_ctx, x);
-        struct ggml_tensor* out_uncond = NULL;
+        struct ggml_tensor* out_cond = ggml_dup_tensor(work_ctx, x);
 
         struct ggml_tensor* denoised = ggml_dup_tensor(work_ctx, x);
 
@@ -1423,7 +1421,7 @@ public:
                                          noised_input,
                                          timesteps,
                                          c,
-                                         c_concat,
+                                         NULL,
                                          c_vector,
                                          -1,
                                          controls,
@@ -1434,7 +1432,7 @@ public:
                                          noised_input,
                                          timesteps,
                                          NULL,
-                                         c_concat,
+                                         NULL,
                                          NULL,
                                          -1,
                                          controls,
@@ -2268,14 +2266,6 @@ void go_decode_first_stage(sd_ctx_t* sd_ctx, ggml_context* work_ctx, ggml_tensor
 }
 
 void apply_lora(sd_ctx_t* sd_ctx, const char* lora) {
-    std::unordered_map<std::string, float> loraData;
-
-    auto result_pair                                = extract_and_remove_lora(lora);
-    std::unordered_map<std::string, float> lora_f2m = result_pair.first;  // lora_name -> multiplier
-
-    for (auto& kv : lora_f2m) {
-        LOG_DEBUG("lora %s:%.2f", kv.first.c_str(), kv.second);
-    }
-
-    sd_ctx->sd->apply_loras(lora_f2m);
+    auto result_pair = extract_and_remove_lora(lora);
+    sd_ctx->sd->apply_loras(result_pair.first);
 }
