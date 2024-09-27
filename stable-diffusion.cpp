@@ -167,7 +167,7 @@ public:
         for (int device = 0; device < ggml_backend_vk_get_device_count(); ++device) {
             backend = ggml_backend_vk_init(device);
         }
-        if(!backend) {
+        if (!backend) {
             LOG_WARN("Failed to initialize Vulkan backend");
         }
 #endif
@@ -181,7 +181,7 @@ public:
             backend = ggml_backend_cpu_init();
         }
 #ifdef SD_USE_FLASH_ATTENTION
-#if defined(SD_USE_CUBLAS) || defined(SD_USE_METAL) || defined (SD_USE_SYCL) || defined(SD_USE_VULKAN)
+#if defined(SD_USE_CUBLAS) || defined(SD_USE_METAL) || defined(SD_USE_SYCL) || defined(SD_USE_VULKAN)
         LOG_WARN("Flash Attention not supported with GPU Backend");
 #else
         LOG_INFO("Flash Attention enabled");
@@ -388,7 +388,10 @@ public:
         params.mem_size   = static_cast<size_t>(10 * 1024) * 1024;  // 10M
         params.mem_buffer = NULL;
         params.no_alloc   = false;
-        // LOG_DEBUG("mem_size %u ", params.mem_size);
+
+        params.mem_size *= 1000;
+        LOG_DEBUG("mem_size1 %u ", params.mem_size);
+
         struct ggml_context* ctx = ggml_init(params);  // for  alphas_cumprod and is_using_v_parameterization check
         GGML_ASSERT(ctx != NULL);
         ggml_tensor* alphas_cumprod_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, TIMESTEPS);
@@ -885,6 +888,9 @@ public:
                 pretty_progress(step, (int)steps, (t1 - t0) / 1000000.f);
                 // LOG_INFO("step %d sampling completed taking %.2fs", step, (t1 - t0) * 1.0f / 1000000);
             }
+
+            send_result_callback(work_ctx, denoised, 1, step);
+
             return denoised;
         };
 
@@ -998,6 +1004,23 @@ public:
     ggml_tensor* decode_first_stage(ggml_context* work_ctx, ggml_tensor* x) {
         return compute_first_stage(work_ctx, x, true);
     }
+
+    sd_result_cb_t sd_result_cb = nullptr;
+    void* sd_result_cb_data     = nullptr;
+
+    void send_result_callback(ggml_context* work_ctx, ggml_tensor* x, size_t number, size_t step) {
+        if (sd_result_cb == nullptr) {
+            return;
+        }
+
+        struct ggml_tensor* result = ggml_dup_tensor(work_ctx, x);
+        copy_ggml_tensor(result, x);
+
+        struct ggml_tensor* img = decode_first_stage(work_ctx, result);
+        auto image_data         = sd_tensor_to_image(img);
+        
+        sd_result_cb(number, step, image_data, sd_result_cb_data);
+    }
 };
 
 /*================================================= SD API ==================================================*/
@@ -1081,12 +1104,9 @@ void free_sd_ctx(sd_ctx_t* sd_ctx) {
     free(sd_ctx);
 }
 
-static sd_result_cb_t sd_result_cb = NULL;
-void* sd_result_cb_data            = NULL;
-
-void sd_set_result_callback(sd_result_cb_t cb, void* data) {
-    sd_result_cb      = cb;
-    sd_result_cb_data = data;
+void sd_set_result_callback(sd_ctx_t* sd_ctx, sd_result_cb_t cb, void* data) {
+    sd_ctx->sd->sd_result_cb      = cb;
+    sd_ctx->sd->sd_result_cb_data = data;
 }
 
 sd_image_t* generate_image(sd_ctx_t* sd_ctx,
@@ -1322,11 +1342,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
         int64_t sampling_end = ggml_time_ms();
         LOG_INFO("sampling completed, taking %.2fs", (sampling_end - sampling_start) * 1.0f / 1000);
 
-        if (sd_result_cb != NULL) {
-            struct ggml_tensor* img = sd_ctx->sd->decode_first_stage(work_ctx, x_0);
-            sd_result_cb(b + 1, sd_tensor_to_image(img), sd_result_cb_data);
-            continue;
-        }
+        //        sd_ctx->sd->send_result_callback(work_ctx, x_0, b + 1, sample_steps + 1);
 
         final_latents.push_back(x_0);
     }
@@ -1336,9 +1352,9 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     }
     int64_t t3 = ggml_time_ms();
     LOG_INFO("generating %" PRId64 " latent images completed, taking %.2fs", final_latents.size(), (t3 - t1) * 1.0f / 1000);
-    
-    if (sd_result_cb != NULL) {
-        return NULL;
+
+    if (sd_ctx->sd->sd_result_cb != nullptr) {
+        return nullptr;
     }
 
     // Decode to image
@@ -1414,7 +1430,9 @@ sd_image_t* txt2img(sd_ctx_t* sd_ctx,
     params.mem_size *= batch_count;
     params.mem_buffer = NULL;
     params.no_alloc   = false;
-    // LOG_DEBUG("mem_size %u ", params.mem_size);
+
+    params.mem_size *= 1000;
+    LOG_DEBUG("mem_size2 %u ", params.mem_size);
 
     struct ggml_context* work_ctx = ggml_init(params);
     if (!work_ctx) {
