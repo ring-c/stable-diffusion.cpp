@@ -142,12 +142,7 @@ SD_API sd_image_t* txt2img(sd_ctx_t* sd_ctx,
                            enum sample_method_t sample_method,
                            int sample_steps,
                            int64_t seed,
-                           int batch_count,
-                           const sd_image_t* control_cond,
-                           float control_strength,
-                           float style_strength,
-                           bool normalize_input,
-                           const char* input_id_images_path);
+                           int batch_count);
 
 typedef struct upscaler_ctx_t upscaler_ctx_t;
 
