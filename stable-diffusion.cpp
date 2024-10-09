@@ -152,117 +152,39 @@ public:
                         bool clip_on_cpu,
                         bool control_net_cpu,
                         bool vae_on_cpu) {
-        use_tiny_autoencoder = taesd_path.size() > 0;
-#ifdef SD_USE_CUBLAS
         LOG_DEBUG("Using CUDA backend");
         backend = ggml_backend_cuda_init(0);
-#endif
-#ifdef SD_USE_METAL
-        LOG_DEBUG("Using Metal backend");
-        ggml_backend_metal_log_set_callback(ggml_log_callback_default, nullptr);
-        backend = ggml_backend_metal_init();
-#endif
-#ifdef SD_USE_VULKAN
-        LOG_DEBUG("Using Vulkan backend");
-        for (int device = 0; device < ggml_backend_vk_get_device_count(); ++device) {
-            backend = ggml_backend_vk_init(device);
-        }
-        if (!backend) {
-            LOG_WARN("Failed to initialize Vulkan backend");
-        }
-#endif
-#ifdef SD_USE_SYCL
-        LOG_DEBUG("Using SYCL backend");
-        backend = ggml_backend_sycl_init(0);
-#endif
 
         if (!backend) {
-            LOG_DEBUG("Using CPU backend");
-            backend = ggml_backend_cpu_init();
-        }
-#ifdef SD_USE_FLASH_ATTENTION
-#if defined(SD_USE_CUBLAS) || defined(SD_USE_METAL) || defined(SD_USE_SYCL) || defined(SD_USE_VULKAN)
-        LOG_WARN("Flash Attention not supported with GPU Backend");
-#else
-        LOG_INFO("Flash Attention enabled");
-#endif
-#endif
-        ModelLoader model_loader;
-
-        vae_tiling = vae_tiling_;
-
-        if (model_path.size() > 0) {
-            LOG_INFO("loading model from '%s'", model_path.c_str());
-            if (!model_loader.init_from_file(model_path)) {
-                LOG_ERROR("init model loader from file failed: '%s'", model_path.c_str());
-            }
-        }
-
-        if (clip_l_path.size() > 0) {
-            LOG_INFO("loading clip_l from '%s'", clip_l_path.c_str());
-            if (!model_loader.init_from_file(clip_l_path, "text_encoders.clip_l.")) {
-                LOG_WARN("loading clip_l from '%s' failed", clip_l_path.c_str());
-            }
-        }
-
-        if (t5xxl_path.size() > 0) {
-            LOG_INFO("loading t5xxl from '%s'", t5xxl_path.c_str());
-            if (!model_loader.init_from_file(t5xxl_path, "text_encoders.t5xxl.")) {
-                LOG_WARN("loading t5xxl from '%s' failed", t5xxl_path.c_str());
-            }
-        }
-
-        if (diffusion_model_path.size() > 0) {
-            LOG_INFO("loading diffusion model from '%s'", diffusion_model_path.c_str());
-            if (!model_loader.init_from_file(diffusion_model_path, "model.diffusion_model.")) {
-                LOG_WARN("loading diffusion model from '%s' failed", diffusion_model_path.c_str());
-            }
-        }
-
-        if (vae_path.size() > 0) {
-            LOG_INFO("loading vae from '%s'", vae_path.c_str());
-            if (!model_loader.init_from_file(vae_path, "vae.")) {
-                LOG_WARN("loading vae from '%s' failed", vae_path.c_str());
-            }
-        }
-
-        version = model_loader.get_sd_version();
-        if (version == VERSION_COUNT) {
-            LOG_ERROR("get sd version from file failed: '%s'", model_path.c_str());
+            LOG_ERROR("no backend");
             return false;
         }
 
+        use_tiny_autoencoder = false;
+        vae_tiling           = vae_tiling_;
+
+        ModelLoader model_loader;
+
+        LOG_INFO("loading model from '%s'", model_path.c_str());
+        if (!model_loader.init_from_file(model_path)) {
+            LOG_ERROR("init model loader from file failed: '%s'", model_path.c_str());
+        }
+
+        //        if (vae_path.size() > 0) {
+        //            LOG_INFO("loading vae from '%s'", vae_path.c_str());
+        //            if (!model_loader.init_from_file(vae_path, "vae.")) {
+        //                LOG_WARN("loading vae from '%s' failed", vae_path.c_str());
+        //            }
+        //        }
+
+        version               = VERSION_SDXL;
+        model_wtype           = wtype;
+        conditioner_wtype     = wtype;
+        diffusion_model_wtype = wtype;
+        vae_wtype             = GGML_TYPE_F32;
+        scale_factor          = 0.13025f;
+
         LOG_INFO("Version: %s ", model_version_to_str[version]);
-        if (wtype == GGML_TYPE_COUNT) {
-            model_wtype = model_loader.get_sd_wtype();
-            if (model_wtype == GGML_TYPE_COUNT) {
-                model_wtype = GGML_TYPE_F32;
-                LOG_WARN("can not get mode wtype frome weight, use f32");
-            }
-            conditioner_wtype = model_loader.get_conditioner_wtype();
-            if (conditioner_wtype == GGML_TYPE_COUNT) {
-                conditioner_wtype = wtype;
-            }
-            diffusion_model_wtype = model_loader.get_diffusion_model_wtype();
-            if (diffusion_model_wtype == GGML_TYPE_COUNT) {
-                diffusion_model_wtype = wtype;
-            }
-            vae_wtype = model_loader.get_vae_wtype();
-
-            if (vae_wtype == GGML_TYPE_COUNT) {
-                vae_wtype = wtype;
-            }
-        } else {
-            model_wtype           = wtype;
-            conditioner_wtype     = wtype;
-            diffusion_model_wtype = wtype;
-            vae_wtype             = wtype;
-        }
-
-        if (version == VERSION_SDXL) {
-            vae_wtype = GGML_TYPE_F32;
-        }
-
         LOG_INFO("Weight type:                 %s", ggml_type_name(model_wtype));
         LOG_INFO("Conditioner weight type:     %s", ggml_type_name(conditioner_wtype));
         LOG_INFO("Diffusion model weight type: %s", ggml_type_name(diffusion_model_wtype));
@@ -270,118 +192,25 @@ public:
 
         LOG_DEBUG("ggml tensor size = %d bytes", (int)sizeof(ggml_tensor));
 
-        if (version == VERSION_SDXL) {
-            scale_factor = 0.13025f;
-            if (vae_path.size() == 0 && taesd_path.size() == 0) {
-                LOG_WARN(
-                    "!!!It looks like you are using SDXL model. "
-                    "If you find that the generated images are completely black, "
-                    "try specifying SDXL VAE FP16 Fix with the --vae parameter. "
-                    "You can find it here: https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/blob/main/sdxl_vae.safetensors");
-            }
-        } else if (version == VERSION_SD3_2B) {
-            scale_factor = 1.5305f;
-        } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
-            scale_factor = 0.3611;
-            // TODO: shift_factor
-        }
+        {
+            clip_backend = backend;
 
-        if (version == VERSION_SVD) {
-            clip_vision = std::make_shared<FrozenCLIPVisionEmbedder>(backend, conditioner_wtype);
-            clip_vision->alloc_params_buffer();
-            clip_vision->get_param_tensors(tensors);
+            cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(clip_backend, conditioner_wtype, embeddings_path, version);
+            diffusion_model  = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
 
-            diffusion_model = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
-            diffusion_model->alloc_params_buffer();
-            diffusion_model->get_param_tensors(tensors);
-
-            first_stage_model = std::make_shared<AutoEncoderKL>(backend, vae_wtype, vae_decode_only, true, version);
-            LOG_DEBUG("vae_decode_only %d", vae_decode_only);
-            first_stage_model->alloc_params_buffer();
-            first_stage_model->get_param_tensors(tensors, "first_stage_model");
-        } else {
-            clip_backend   = backend;
-            bool use_t5xxl = false;
-            if (version == VERSION_SD3_2B || version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
-                use_t5xxl = true;
-            }
-            if (!ggml_backend_is_cpu(backend) && use_t5xxl && conditioner_wtype != GGML_TYPE_F32) {
-                clip_on_cpu = true;
-                LOG_INFO("set clip_on_cpu to true");
-            }
-            if (clip_on_cpu && !ggml_backend_is_cpu(backend)) {
-                LOG_INFO("CLIP: Using CPU backend");
-                clip_backend = ggml_backend_cpu_init();
-            }
-            if (version == VERSION_SD3_2B) {
-                cond_stage_model = std::make_shared<SD3CLIPEmbedder>(clip_backend, conditioner_wtype);
-                diffusion_model  = std::make_shared<MMDiTModel>(backend, diffusion_model_wtype, version);
-            } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
-                cond_stage_model = std::make_shared<FluxCLIPEmbedder>(clip_backend, conditioner_wtype);
-                diffusion_model  = std::make_shared<FluxModel>(backend, diffusion_model_wtype, version);
-            } else {
-                cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(clip_backend, conditioner_wtype, embeddings_path, version);
-                diffusion_model  = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
-            }
             cond_stage_model->alloc_params_buffer();
             cond_stage_model->get_param_tensors(tensors);
 
             diffusion_model->alloc_params_buffer();
             diffusion_model->get_param_tensors(tensors);
 
-            if (!use_tiny_autoencoder) {
-                if (vae_on_cpu && !ggml_backend_is_cpu(backend)) {
-                    LOG_INFO("VAE Autoencoder: Using CPU backend");
-                    vae_backend = ggml_backend_cpu_init();
-                } else {
-                    vae_backend = backend;
-                }
+            {
+                vae_backend = backend;
+
                 first_stage_model = std::make_shared<AutoEncoderKL>(vae_backend, vae_wtype, vae_decode_only, false, version);
                 first_stage_model->alloc_params_buffer();
                 first_stage_model->get_param_tensors(tensors, "first_stage_model");
-            } else {
-                tae_first_stage = std::make_shared<TinyAutoEncoder>(backend, vae_wtype, vae_decode_only);
             }
-            // first_stage_model->get_param_tensors(tensors, "first_stage_model.");
-
-            if (control_net_path.size() > 0) {
-                ggml_backend_t controlnet_backend = NULL;
-                if (control_net_cpu && !ggml_backend_is_cpu(backend)) {
-                    LOG_DEBUG("ControlNet: Using CPU backend");
-                    controlnet_backend = ggml_backend_cpu_init();
-                } else {
-                    controlnet_backend = backend;
-                }
-                control_net = std::make_shared<ControlNet>(controlnet_backend, diffusion_model_wtype, version);
-            }
-
-            pmid_model = std::make_shared<PhotoMakerIDEncoder>(clip_backend, model_wtype, version);
-            if (id_embeddings_path.size() > 0) {
-                pmid_lora = std::make_shared<LoraModel>(backend, model_wtype, id_embeddings_path, "");
-                if (!pmid_lora->load_from_file(true)) {
-                    LOG_WARN("load photomaker lora tensors from %s failed", id_embeddings_path.c_str());
-                    return false;
-                }
-                LOG_INFO("loading stacked ID embedding (PHOTOMAKER) model file from '%s'", id_embeddings_path.c_str());
-                if (!model_loader.init_from_file(id_embeddings_path, "pmid.")) {
-                    LOG_WARN("loading stacked ID embedding from '%s' failed", id_embeddings_path.c_str());
-                } else {
-                    stacked_id = true;
-                }
-            }
-            if (stacked_id) {
-                if (!pmid_model->alloc_params_buffer()) {
-                    LOG_ERROR(" pmid model params buffer allocation failed");
-                    return false;
-                }
-                // LOG_INFO("pmid param memory buffer size = %.2fMB ",
-                //     pmid_model->params_buffer_size / 1024.0 / 1024.0);
-                pmid_model->get_param_tensors(tensors, "pmid");
-            }
-            // if(stacked_id){
-            //    pmid_model.init_params(GGML_TYPE_F32);
-            //    pmid_model.map_by_name(tensors, "pmid.");
-            // }
         }
 
         struct ggml_init_params params;
@@ -391,174 +220,22 @@ public:
         // LOG_DEBUG("mem_size %u ", params.mem_size);
         struct ggml_context* ctx = ggml_init(params);  // for  alphas_cumprod and is_using_v_parameterization check
         GGML_ASSERT(ctx != NULL);
+
         ggml_tensor* alphas_cumprod_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, TIMESTEPS);
         calculate_alphas_cumprod((float*)alphas_cumprod_tensor->data);
+        tensors["alphas_cumprod"] = alphas_cumprod_tensor;
 
         // load weights
         LOG_DEBUG("loading weights");
 
-        int64_t t0 = ggml_time_ms();
+        // LOG_DEBUG("vae_decode_only %d", vae_decode_only);
 
         std::set<std::string> ignore_tensors;
-        tensors["alphas_cumprod"] = alphas_cumprod_tensor;
-        if (use_tiny_autoencoder) {
-            ignore_tensors.insert("first_stage_model.");
-        }
-        if (stacked_id) {
-            ignore_tensors.insert("lora.");
-        }
-
-        if (vae_decode_only) {
-            ignore_tensors.insert("first_stage_model.encoder");
-            ignore_tensors.insert("first_stage_model.quant");
-        }
-        if (version == VERSION_SVD) {
-            ignore_tensors.insert("conditioner.embedders.3");
-        }
         bool success = model_loader.load_tensors(tensors, backend, ignore_tensors);
         if (!success) {
             LOG_ERROR("load tensors from model loader failed");
             ggml_free(ctx);
             return false;
-        }
-
-        // LOG_DEBUG("model size = %.2fMB", total_size / 1024.0 / 1024.0);
-
-        if (version == VERSION_SVD) {
-            // diffusion_model->test();
-            // first_stage_model->test();
-            // return false;
-        } else {
-            size_t clip_params_mem_size = cond_stage_model->get_params_buffer_size();
-            size_t unet_params_mem_size = diffusion_model->get_params_buffer_size();
-            size_t vae_params_mem_size  = 0;
-            if (!use_tiny_autoencoder) {
-                vae_params_mem_size = first_stage_model->get_params_buffer_size();
-            } else {
-                if (!tae_first_stage->load_from_file(taesd_path)) {
-                    return false;
-                }
-                vae_params_mem_size = tae_first_stage->get_params_buffer_size();
-            }
-            size_t control_net_params_mem_size = 0;
-            if (control_net) {
-                if (!control_net->load_from_file(control_net_path)) {
-                    return false;
-                }
-                control_net_params_mem_size = control_net->get_params_buffer_size();
-            }
-            size_t pmid_params_mem_size = 0;
-            if (stacked_id) {
-                pmid_params_mem_size = pmid_model->get_params_buffer_size();
-            }
-
-            size_t total_params_ram_size  = 0;
-            size_t total_params_vram_size = 0;
-            if (ggml_backend_is_cpu(clip_backend)) {
-                total_params_ram_size += clip_params_mem_size + pmid_params_mem_size;
-            } else {
-                total_params_vram_size += clip_params_mem_size + pmid_params_mem_size;
-            }
-
-            if (ggml_backend_is_cpu(backend)) {
-                total_params_ram_size += unet_params_mem_size;
-            } else {
-                total_params_vram_size += unet_params_mem_size;
-            }
-
-            if (ggml_backend_is_cpu(vae_backend)) {
-                total_params_ram_size += vae_params_mem_size;
-            } else {
-                total_params_vram_size += vae_params_mem_size;
-            }
-
-            if (ggml_backend_is_cpu(control_net_backend)) {
-                total_params_ram_size += control_net_params_mem_size;
-            } else {
-                total_params_vram_size += control_net_params_mem_size;
-            }
-
-            size_t total_params_size = total_params_ram_size + total_params_vram_size;
-            LOG_INFO(
-                "total params memory size = %.2fMB (VRAM %.2fMB, RAM %.2fMB): "
-                "clip %.2fMB(%s), unet %.2fMB(%s), vae %.2fMB(%s), controlnet %.2fMB(%s), pmid %.2fMB(%s)",
-                total_params_size / 1024.0 / 1024.0,
-                total_params_vram_size / 1024.0 / 1024.0,
-                total_params_ram_size / 1024.0 / 1024.0,
-                clip_params_mem_size / 1024.0 / 1024.0,
-                ggml_backend_is_cpu(clip_backend) ? "RAM" : "VRAM",
-                unet_params_mem_size / 1024.0 / 1024.0,
-                ggml_backend_is_cpu(backend) ? "RAM" : "VRAM",
-                vae_params_mem_size / 1024.0 / 1024.0,
-                ggml_backend_is_cpu(vae_backend) ? "RAM" : "VRAM",
-                control_net_params_mem_size / 1024.0 / 1024.0,
-                ggml_backend_is_cpu(control_net_backend) ? "RAM" : "VRAM",
-                pmid_params_mem_size / 1024.0 / 1024.0,
-                ggml_backend_is_cpu(clip_backend) ? "RAM" : "VRAM");
-        }
-
-        int64_t t1 = ggml_time_ms();
-        LOG_INFO("loading model from '%s' completed, taking %.2fs", model_path.c_str(), (t1 - t0) * 1.0f / 1000);
-
-        // check is_using_v_parameterization_for_sd2
-        bool is_using_v_parameterization = false;
-        if (version == VERSION_SD2) {
-            if (is_using_v_parameterization_for_sd2(ctx)) {
-                is_using_v_parameterization = true;
-            }
-        } else if (version == VERSION_SVD) {
-            // TODO: V_PREDICTION_EDM
-            is_using_v_parameterization = true;
-        }
-
-        if (version == VERSION_SD3_2B) {
-            LOG_INFO("running in FLOW mode");
-            denoiser = std::make_shared<DiscreteFlowDenoiser>();
-        } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
-            LOG_INFO("running in Flux FLOW mode");
-            float shift = 1.15f;
-            if (version == VERSION_FLUX_SCHNELL) {
-                shift = 1.0f;  // TODO: validate
-            }
-            denoiser = std::make_shared<FluxFlowDenoiser>(shift);
-        } else if (is_using_v_parameterization) {
-            LOG_INFO("running in v-prediction mode");
-            denoiser = std::make_shared<CompVisVDenoiser>();
-        } else {
-            LOG_INFO("running in eps-prediction mode");
-        }
-
-        if (schedule != DEFAULT) {
-            switch (schedule) {
-                case DISCRETE:
-                    LOG_INFO("running with discrete schedule");
-                    denoiser->schedule = std::make_shared<DiscreteSchedule>();
-                    break;
-                case KARRAS:
-                    LOG_INFO("running with Karras schedule");
-                    denoiser->schedule = std::make_shared<KarrasSchedule>();
-                    break;
-                case EXPONENTIAL:
-                    LOG_INFO("running exponential schedule");
-                    denoiser->schedule = std::make_shared<ExponentialSchedule>();
-                    break;
-                case AYS:
-                    LOG_INFO("Running with Align-Your-Steps schedule");
-                    denoiser->schedule          = std::make_shared<AYSSchedule>();
-                    denoiser->schedule->version = version;
-                    break;
-                case GITS:
-                    LOG_INFO("Running with GITS schedule");
-                    denoiser->schedule          = std::make_shared<GITSSchedule>();
-                    denoiser->schedule->version = version;
-                    break;
-                case DEFAULT:
-                    // Don't touch anything.
-                    break;
-                default:
-                    LOG_ERROR("Unknown schedule %i", schedule);
-                    abort();
-            }
         }
 
         auto comp_vis_denoiser = std::dynamic_pointer_cast<CompVisDenoiser>(denoiser);
