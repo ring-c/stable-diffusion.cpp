@@ -1,47 +1,14 @@
 #include "ggml_extend.hpp"
 
 #include "model.h"
-#include "rng.hpp"
 #include "rng_philox.hpp"
 #include "stable-diffusion.h"
-#include "util.h"
 
 #include "conditioner.hpp"
 #include "denoiser.hpp"
 #include "diffusion_model.hpp"
 
-#include "tae.hpp"
 #include "vae.hpp"
-
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_STATIC
-#include "stb_image.h"
-
-// #define STB_IMAGE_WRITE_IMPLEMENTATION
-// #define STB_IMAGE_WRITE_STATIC
-// #include "stb_image_write.h"
-
-const char* model_version_to_str[] = {
-    "SD 1.x",
-    "SD 2.x",
-    "SDXL",
-    "SVD",
-    "SD3 2B",
-    "Flux Dev",
-    "Flux Schnell"};
-
-const char* sampling_methods_str[] = {
-    "Euler A",
-    "Euler",
-    "Heun",
-    "DPM2",
-    "DPM++ (2s)",
-    "DPM++ (2M)",
-    "modified DPM++ (2M)",
-    "iPNDM",
-    "iPNDM_v",
-    "LCM",
-};
 
 /*=============================================== StableDiffusionGGML ================================================*/
 
@@ -65,7 +32,6 @@ public:
     std::shared_ptr<Conditioner> cond_stage_model;
     std::shared_ptr<DiffusionModel> diffusion_model;
     std::shared_ptr<AutoEncoderKL> first_stage_model;
-    std::shared_ptr<TinyAutoEncoder> tae_first_stage;
 
     std::map<std::string, struct ggml_tensor*> tensors;
 
@@ -106,7 +72,6 @@ public:
         vae_wtype             = GGML_TYPE_F32;
         scale_factor          = 0.13025f;
 
-        LOG_INFO("Version: %s ", model_version_to_str[version]);
         LOG_INFO("Conditioner weight type:     %s", ggml_type_name(conditioner_wtype));
         LOG_INFO("Diffusion model weight type: %s", ggml_type_name(diffusion_model_wtype));
         LOG_INFO("VAE weight type:             %s", ggml_type_name(vae_wtype));
@@ -456,7 +421,6 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     int C = 4;
     int W = width / 8;
     int H = height / 8;
-    LOG_INFO("sampling using %s method", sampling_methods_str[sample_method]);
     for (int b = 0; b < batch_count; b++) {
         int64_t sampling_start = ggml_time_ms();
         int64_t cur_seed       = seed + b;
