@@ -96,7 +96,7 @@ enum sd_type_t {
     SD_TYPE_COUNT,
 };
 
-SD_API const char* sd_type_name(enum sd_type_t type);
+// SD_API const char* sd_type_name(enum sd_type_t type);
 
 enum sd_log_level_t {
     SD_LOG_DEBUG,
@@ -111,10 +111,10 @@ typedef void (*sd_progress_cb_t)(int step, int steps, float time, void* data);
 typedef void (*sd_result_cb_t)(size_t number, uint8_t* image_data, void* data);
 typedef void (*sd_result_step_cb_t)(size_t number, size_t step, uint8_t* image_data, void* data);
 
-SD_API void sd_set_log_callback(sd_log_cb_t sd_log_cb, void* data);
-SD_API void sd_set_progress_callback(sd_progress_cb_t cb, void* data);
-SD_API int32_t get_num_physical_cores();
-SD_API const char* sd_get_system_info();
+[[maybe_unused]] SD_API void sd_set_log_callback(sd_log_cb_t sd_log_cb, void* data);
+[[maybe_unused]] SD_API void sd_set_progress_callback(sd_progress_cb_t cb, void* data);
+// SD_API int32_t get_num_physical_cores();
+// SD_API const char* sd_get_system_info();
 
 typedef struct {
     uint32_t width;
@@ -125,25 +125,26 @@ typedef struct {
 
 typedef struct sd_ctx_t sd_ctx_t;
 
-SD_API sd_ctx_t* new_sd_ctx(const char* model_path);
+[[maybe_unused]] SD_API sd_ctx_t* new_sd_ctx(const char* model_path);
 
 SD_API void free_sd_ctx(sd_ctx_t* sd_ctx);
-SD_API void sd_ctx_set_result_callback(sd_ctx_t* sd_ctx, sd_result_cb_t cb, void* data);
-SD_API void sd_ctx_set_result_step_callback(sd_ctx_t* sd_ctx, sd_result_step_cb_t cb, void* data);
+[[maybe_unused]] SD_API void sd_ctx_set_result_callback(sd_ctx_t* sd_ctx, sd_result_cb_t cb, void* data);
+[[maybe_unused]] SD_API void sd_ctx_set_result_step_callback(sd_ctx_t* sd_ctx, sd_result_step_cb_t cb, void* data);
 
-SD_API sd_image_t* txt2img(sd_ctx_t* sd_ctx,
-                           const char* prompt,
-                           const char* negative_prompt,
-                           int clip_skip,
-                           float cfg_scale,
-                           float guidance,
-                           int width,
-                           int height,
-                           enum sample_method_t sample_method,
-                           int sample_steps,
-                           int64_t seed,
-                           int batch_count);
+[[maybe_unused]] SD_API void txt2img(sd_ctx_t* sd_ctx,
+                                     const char* prompt,
+                                     const char* negative_prompt,
+                                     int clip_skip,
+                                     float cfg_scale,
+                                     float guidance,
+                                     int width,
+                                     int height,
+                                     enum sample_method_t sample_method,
+                                     int sample_steps,
+                                     int64_t seed,
+                                     int batch_count);
 
+/*
 typedef struct upscaler_ctx_t upscaler_ctx_t;
 
 SD_API upscaler_ctx_t* new_upscaler_ctx(const char* esrgan_path,
@@ -163,7 +164,7 @@ SD_API uint8_t* preprocess_canny(uint8_t* img,
                                  float weak,
                                  float strong,
                                  bool inverse);
-
+*/
 #ifdef __cplusplus
 }
 #endif

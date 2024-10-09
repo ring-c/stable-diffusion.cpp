@@ -334,7 +334,7 @@ void pretty_progress(int step, int steps, float time) {
     progress += "|";
 
     char log_text[LOG_BUFFER_SIZE];
-    snprintf(log_text,LOG_BUFFER_SIZE,time > 1.0f ? "\r%s %i/%i - %.2fs/it" : "\r%s %i/%i - %.2fit/s",
+    snprintf(log_text, LOG_BUFFER_SIZE, time > 1.0f ? "\r%s %i/%i - %.2fs/it" : "\r%s %i/%i - %.2fit/s",
              progress.c_str(), step, steps,
              time > 1.0f || time == 0 ? time : (1.0f / time));
 
@@ -382,7 +382,7 @@ void log_printf(sd_log_level_t level, const char* file, int line, const char* fo
         vsnprintf(log_buffer + written, LOG_BUFFER_SIZE - written, format, args);
     }
 
-    if (level != SD_LOG_PROGRESS){
+    if (level != SD_LOG_PROGRESS) {
         strncat(log_buffer, "\n", LOG_BUFFER_SIZE - strlen(log_buffer));
     }
 
@@ -393,14 +393,16 @@ void log_printf(sd_log_level_t level, const char* file, int line, const char* fo
     va_end(args);
 }
 
-void sd_set_log_callback(sd_log_cb_t cb, void* data) {
+[[maybe_unused]] void sd_set_log_callback(sd_log_cb_t cb, void* data) {
     sd_log_cb      = cb;
     sd_log_cb_data = data;
 }
-void sd_set_progress_callback(sd_progress_cb_t cb, void* data) {
+
+[[maybe_unused]] void sd_set_progress_callback(sd_progress_cb_t cb, void* data) {
     sd_progress_cb      = cb;
     sd_progress_cb_data = data;
 }
+
 const char* sd_get_system_info() {
     static char buffer[1024];
     std::stringstream ss;

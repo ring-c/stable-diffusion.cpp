@@ -370,7 +370,7 @@ struct sd_ctx_t {
     StableDiffusionGGML* sd = nullptr;
 };
 
-sd_ctx_t* new_sd_ctx(const char* model_path_c_str) {
+[[maybe_unused]] sd_ctx_t* new_sd_ctx(const char* model_path_c_str) {
     auto sd_ctx = (sd_ctx_t*)malloc(sizeof(sd_ctx_t));
     if (sd_ctx == nullptr) {
         return nullptr;
@@ -398,12 +398,12 @@ void free_sd_ctx(sd_ctx_t* sd_ctx) {
     free(sd_ctx);
 }
 
-void sd_ctx_set_result_callback(sd_ctx_t* sd_ctx, sd_result_cb_t cb, void* data) {
+[[maybe_unused]] void sd_ctx_set_result_callback(sd_ctx_t* sd_ctx, sd_result_cb_t cb, void* data) {
     sd_ctx->sd->result_cb      = cb;
     sd_ctx->sd->result_cb_data = data;
 }
 
-void sd_ctx_set_result_step_callback(sd_ctx_t* sd_ctx, sd_result_step_cb_t cb, void* data) {
+[[maybe_unused]] void sd_ctx_set_result_step_callback(sd_ctx_t* sd_ctx, sd_result_step_cb_t cb, void* data) {
     sd_ctx->sd->result_step_cb      = cb;
     sd_ctx->sd->result_step_cb_data = data;
 }
@@ -412,7 +412,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
                            struct ggml_context* work_ctx,
                            ggml_tensor* init_latent,
                            std::string prompt,
-                           std::string negative_prompt,
+                           const std::string& negative_prompt,
                            int clip_skip,
                            float cfg_scale,
                            float guidance,
@@ -491,20 +491,20 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     return nullptr;
 }
 
-sd_image_t* txt2img(sd_ctx_t* sd_ctx,
-                    const char* prompt_c_str,
-                    const char* negative_prompt_c_str,
-                    int clip_skip,
-                    float cfg_scale,
-                    float guidance,
-                    int width,
-                    int height,
-                    enum sample_method_t sample_method,
-                    int sample_steps,
-                    int64_t seed,
-                    int batch_count) {
+[[maybe_unused]] void txt2img(sd_ctx_t* sd_ctx,
+                              const char* prompt_c_str,
+                              const char* negative_prompt_c_str,
+                              int clip_skip,
+                              float cfg_scale,
+                              float guidance,
+                              int width,
+                              int height,
+                              enum sample_method_t sample_method,
+                              int sample_steps,
+                              int64_t seed,
+                              int batch_count) {
     if (sd_ctx == nullptr) {
-        return nullptr;
+        return;
     }
 
     ggml_init_params params{};
@@ -518,7 +518,7 @@ sd_image_t* txt2img(sd_ctx_t* sd_ctx,
     struct ggml_context* work_ctx = ggml_init(params);
     if (!work_ctx) {
         LOG_ERROR("ggml_init() failed");
-        return nullptr;
+        return;
     }
 
     auto sigmas = sd_ctx->sd->denoiser->get_sigmas(sample_steps);
@@ -530,20 +530,18 @@ sd_image_t* txt2img(sd_ctx_t* sd_ctx,
     ggml_tensor* init_latent = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
     ggml_set_f32(init_latent, 0.f);
 
-    sd_image_t* result_images = generate_image(sd_ctx,
-                                               work_ctx,
-                                               init_latent,
-                                               prompt_c_str,
-                                               negative_prompt_c_str,
-                                               clip_skip,
-                                               cfg_scale,
-                                               guidance,
-                                               width,
-                                               height,
-                                               sample_method,
-                                               sigmas,
-                                               seed,
-                                               batch_count);
-
-    return result_images;
+    generate_image(sd_ctx,
+                   work_ctx,
+                   init_latent,
+                   prompt_c_str,
+                   negative_prompt_c_str,
+                   clip_skip,
+                   cfg_scale,
+                   guidance,
+                   width,
+                   height,
+                   sample_method,
+                   sigmas,
+                   seed,
+                   batch_count);
 }
