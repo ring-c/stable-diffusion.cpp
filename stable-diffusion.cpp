@@ -137,31 +137,13 @@ public:
         ggml_backend_free(backend);
     }
 
-    bool load_from_file(const std::string& model_path,
-                        const std::string& clip_l_path,
-                        const std::string& t5xxl_path,
-                        const std::string& diffusion_model_path,
-                        const std::string& vae_path,
-                        const std::string control_net_path,
-                        const std::string embeddings_path,
-                        const std::string id_embeddings_path,
-                        const std::string& taesd_path,
-                        bool vae_tiling_,
-                        ggml_type wtype,
-                        schedule_t schedule,
-                        bool clip_on_cpu,
-                        bool control_net_cpu,
-                        bool vae_on_cpu) {
+    bool load_from_file(const std::string& model_path) {
         LOG_DEBUG("Using CUDA backend");
         backend = ggml_backend_cuda_init(0);
-
         if (!backend) {
             LOG_ERROR("no backend");
             return false;
         }
-
-        use_tiny_autoencoder = false;
-        vae_tiling           = vae_tiling_;
 
         ModelLoader model_loader;
 
@@ -170,17 +152,10 @@ public:
             LOG_ERROR("init model loader from file failed: '%s'", model_path.c_str());
         }
 
-        //        if (vae_path.size() > 0) {
-        //            LOG_INFO("loading vae from '%s'", vae_path.c_str());
-        //            if (!model_loader.init_from_file(vae_path, "vae.")) {
-        //                LOG_WARN("loading vae from '%s' failed", vae_path.c_str());
-        //            }
-        //        }
-
         version               = VERSION_SDXL;
-        model_wtype           = wtype;
-        conditioner_wtype     = wtype;
-        diffusion_model_wtype = wtype;
+        model_wtype           = GGML_TYPE_F16;
+        conditioner_wtype     = GGML_TYPE_F16;
+        diffusion_model_wtype = GGML_TYPE_F16;
         vae_wtype             = GGML_TYPE_F32;
         scale_factor          = 0.13025f;
 
@@ -195,7 +170,7 @@ public:
         {
             clip_backend = backend;
 
-            cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(clip_backend, conditioner_wtype, embeddings_path, version);
+            cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(clip_backend, conditioner_wtype, "", version);
             diffusion_model  = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
 
             cond_stage_model->alloc_params_buffer();
@@ -213,41 +188,32 @@ public:
             }
         }
 
-        struct ggml_init_params params;
-        params.mem_size   = static_cast<size_t>(10 * 1024) * 1024;  // 10M
-        params.mem_buffer = NULL;
-        params.no_alloc   = false;
-        // LOG_DEBUG("mem_size %u ", params.mem_size);
-        struct ggml_context* ctx = ggml_init(params);  // for  alphas_cumprod and is_using_v_parameterization check
-        GGML_ASSERT(ctx != NULL);
-
-        ggml_tensor* alphas_cumprod_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, TIMESTEPS);
-        calculate_alphas_cumprod((float*)alphas_cumprod_tensor->data);
-        tensors["alphas_cumprod"] = alphas_cumprod_tensor;
-
         // load weights
         LOG_DEBUG("loading weights");
-
-        // LOG_DEBUG("vae_decode_only %d", vae_decode_only);
 
         std::set<std::string> ignore_tensors;
         bool success = model_loader.load_tensors(tensors, backend, ignore_tensors);
         if (!success) {
             LOG_ERROR("load tensors from model loader failed");
-            ggml_free(ctx);
             return false;
         }
 
         auto comp_vis_denoiser = std::dynamic_pointer_cast<CompVisDenoiser>(denoiser);
         if (comp_vis_denoiser) {
+            float linear_start_sqrt = sqrtf(0.00085f);
+            float amount            = sqrtf(0.0120) - linear_start_sqrt;  // linear_end_sqrt - linear_start_sqrt
+            float product           = 1.0f;
+
             for (int i = 0; i < TIMESTEPS; i++) {
-                comp_vis_denoiser->sigmas[i]     = std::sqrt((1 - ((float*)alphas_cumprod_tensor->data)[i]) / ((float*)alphas_cumprod_tensor->data)[i]);
+                float beta = linear_start_sqrt + amount * ((float)i / (TIMESTEPS - 1));
+                product *= 1.0f - powf(beta, 2.0f);
+
+                comp_vis_denoiser->sigmas[i]     = std::sqrt((1 - product) / product);
                 comp_vis_denoiser->log_sigmas[i] = std::log(comp_vis_denoiser->sigmas[i]);
             }
         }
 
         LOG_DEBUG("finished loaded file");
-        ggml_free(ctx);
         return true;
     }
 
@@ -772,26 +738,13 @@ sd_ctx_t* new_sd_ctx(const char* model_path_c_str,
         return NULL;
     }
 
-    if (!sd_ctx->sd->load_from_file(model_path,
-                                    clip_l_path,
-                                    t5xxl_path_c_str,
-                                    diffusion_model_path,
-                                    vae_path,
-                                    control_net_path,
-                                    embd_path,
-                                    id_embd_path,
-                                    taesd_path,
-                                    vae_tiling,
-                                    (ggml_type)wtype,
-                                    s,
-                                    keep_clip_on_cpu,
-                                    keep_control_net_cpu,
-                                    keep_vae_on_cpu)) {
+    if (!sd_ctx->sd->load_from_file(model_path)) {
         delete sd_ctx->sd;
         sd_ctx->sd = NULL;
         free(sd_ctx);
         return NULL;
     }
+
     return sd_ctx;
 }
 
