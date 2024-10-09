@@ -1,9 +1,9 @@
-build*/
+/build/*
+!/build/build.sh
 test/
 .vscode/
 .cache/
 *.swp
-.vscode/
 *.bat
 *.bin
 *.exe
@@ -11,3 +11,12 @@ test/
 output*.png
 models*
 *.log
+.idea
+
+/.vs/
+/out/
+/cmake-build-debug/
+/cmake-build-release/
+/cmake-build-debug-visual-studio/
+/cmake-build-release-visual-studio/
+/.idea

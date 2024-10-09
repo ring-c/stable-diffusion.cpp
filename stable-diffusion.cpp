@@ -9,8 +9,7 @@
 #include "conditioner.hpp"
 #include "denoiser.hpp"
 #include "diffusion_model.hpp"
-#include "lora.hpp"
-#include "pmid.hpp"
+
 #include "tae.hpp"
 #include "vae.hpp"
 
@@ -61,7 +60,7 @@ public:
     bool vae_decode_only         = false;
     bool free_params_immediately = false;
 
-    std::shared_ptr<RNG> rng = std::make_shared<STDDefaultRNG>();
+    std::shared_ptr<RNG> rng = std::make_shared<PhiloxRNG>();
     int n_threads            = -1;
     float scale_factor       = 0.18215f;
 
@@ -79,22 +78,6 @@ public:
     std::shared_ptr<Denoiser> denoiser = std::make_shared<CompVisDenoiser>();
 
     StableDiffusionGGML() = default;
-
-    StableDiffusionGGML(int n_threads,
-                        bool vae_decode_only,
-                        bool free_params_immediately,
-                        std::string lora_model_dir,
-                        rng_type_t rng_type)
-        : n_threads(n_threads),
-          vae_decode_only(vae_decode_only),
-          free_params_immediately(free_params_immediately),
-          lora_model_dir(lora_model_dir) {
-        if (rng_type == STD_DEFAULT_RNG) {
-            rng = std::make_shared<STDDefaultRNG>();
-        } else if (rng_type == CUDA_RNG) {
-            rng = std::make_shared<PhiloxRNG>();
-        }
-    }
 
     ~StableDiffusionGGML() {
         if (clip_backend != backend) {
@@ -188,63 +171,6 @@ public:
         return true;
     }
 
-    void apply_lora(const std::string& lora_name, float multiplier) {
-        int64_t t0                 = ggml_time_ms();
-        std::string st_file_path   = path_join(lora_model_dir, lora_name + ".safetensors");
-        std::string ckpt_file_path = path_join(lora_model_dir, lora_name + ".ckpt");
-        std::string file_path;
-        if (file_exists(st_file_path)) {
-            file_path = st_file_path;
-        } else if (file_exists(ckpt_file_path)) {
-            file_path = ckpt_file_path;
-        } else {
-            LOG_WARN("can not find %s or %s for lora %s", st_file_path.c_str(), ckpt_file_path.c_str(), lora_name.c_str());
-            return;
-        }
-        LoraModel lora(backend, model_wtype, file_path);
-        if (!lora.load_from_file()) {
-            LOG_WARN("load lora tensors from %s failed", file_path.c_str());
-            return;
-        }
-
-        lora.multiplier = multiplier;
-        lora.apply(tensors, n_threads);
-        lora.free_params_buffer();
-
-        int64_t t1 = ggml_time_ms();
-
-        LOG_INFO("lora '%s' applied, taking %.2fs", lora_name.c_str(), (t1 - t0) * 1.0f / 1000);
-    }
-
-    void apply_loras(const std::unordered_map<std::string, float>& lora_state) {
-        if (lora_state.size() > 0 && model_wtype != GGML_TYPE_F16 && model_wtype != GGML_TYPE_F32) {
-            LOG_WARN("In quantized models when applying LoRA, the images have poor quality.");
-        }
-        std::unordered_map<std::string, float> lora_state_diff;
-        for (auto& kv : lora_state) {
-            const std::string& lora_name = kv.first;
-            float multiplier             = kv.second;
-
-            if (curr_lora_state.find(lora_name) != curr_lora_state.end()) {
-                float curr_multiplier = curr_lora_state[lora_name];
-                float multiplier_diff = multiplier - curr_multiplier;
-                if (multiplier_diff != 0.f) {
-                    lora_state_diff[lora_name] = multiplier_diff;
-                }
-            } else {
-                lora_state_diff[lora_name] = multiplier;
-            }
-        }
-
-        LOG_INFO("Attempting to apply %lu LoRAs", lora_state.size());
-
-        for (auto& kv : lora_state_diff) {
-            apply_lora(kv.first, kv.second);
-        }
-
-        curr_lora_state = lora_state;
-    }
-
     ggml_tensor* sample(ggml_context* work_ctx,
                         ggml_tensor* init_latent,
                         ggml_tensor* noise,
@@ -267,11 +193,11 @@ public:
 
         struct ggml_tensor* noised_input = ggml_dup_tensor(work_ctx, noise);
 
-        bool has_unconditioned = cfg_scale != 1.0 && uncond.c_crossattn != NULL;
+        bool has_unconditioned = cfg_scale != 1.0 && uncond.c_crossattn != nullptr;
 
         // denoise wrapper
         struct ggml_tensor* out_cond   = ggml_dup_tensor(work_ctx, x);
-        struct ggml_tensor* out_uncond = NULL;
+        struct ggml_tensor* out_uncond = nullptr;
         if (has_unconditioned) {
             out_uncond = ggml_dup_tensor(work_ctx, x);
         }
@@ -328,7 +254,7 @@ public:
                                          &out_cond);
             }
 
-            float* negative_data = NULL;
+            float* negative_data = nullptr;
             if (has_unconditioned) {
                 diffusion_model->compute(n_threads,
                                          noised_input,
@@ -343,10 +269,12 @@ public:
                                          &out_uncond);
                 negative_data = (float*)out_uncond->data;
             }
-            float* vec_denoised  = (float*)denoised->data;
-            float* vec_input     = (float*)input->data;
-            float* positive_data = (float*)out_cond->data;
-            int ne_elements      = (int)ggml_nelements(denoised);
+
+            auto vec_denoised  = (float*)denoised->data;
+            auto vec_input     = (float*)input->data;
+            auto positive_data = (float*)out_cond->data;
+
+            int ne_elements = (int)ggml_nelements(denoised);
             for (int i = 0; i < ne_elements; i++) {
                 float latent_result = positive_data[i];
                 if (has_unconditioned) {
@@ -468,46 +396,14 @@ struct sd_ctx_t {
     StableDiffusionGGML* sd = NULL;
 };
 
-sd_ctx_t* new_sd_ctx(const char* model_path_c_str,
-                     const char* clip_l_path_c_str,
-                     const char* t5xxl_path_c_str,
-                     const char* diffusion_model_path_c_str,
-                     const char* vae_path_c_str,
-                     const char* taesd_path_c_str,
-                     const char* control_net_path_c_str,
-                     const char* lora_model_dir_c_str,
-                     const char* embed_dir_c_str,
-                     const char* id_embed_dir_c_str,
-                     bool vae_decode_only,
-                     bool vae_tiling,
-                     bool free_params_immediately,
-                     int n_threads,
-                     enum sd_type_t wtype,
-                     enum rng_type_t rng_type,
-                     enum schedule_t s,
-                     bool keep_clip_on_cpu,
-                     bool keep_control_net_cpu,
-                     bool keep_vae_on_cpu) {
+sd_ctx_t* new_sd_ctx(const char* model_path_c_str) {
     sd_ctx_t* sd_ctx = (sd_ctx_t*)malloc(sizeof(sd_ctx_t));
     if (sd_ctx == NULL) {
         return NULL;
     }
     std::string model_path(model_path_c_str);
-    std::string clip_l_path(clip_l_path_c_str);
-    std::string t5xxl_path(t5xxl_path_c_str);
-    std::string diffusion_model_path(diffusion_model_path_c_str);
-    std::string vae_path(vae_path_c_str);
-    std::string taesd_path(taesd_path_c_str);
-    std::string control_net_path(control_net_path_c_str);
-    std::string embd_path(embed_dir_c_str);
-    std::string id_embd_path(id_embed_dir_c_str);
-    std::string lora_model_dir(lora_model_dir_c_str);
 
-    sd_ctx->sd = new StableDiffusionGGML(n_threads,
-                                         vae_decode_only,
-                                         free_params_immediately,
-                                         lora_model_dir,
-                                         rng_type);
+    sd_ctx->sd = new StableDiffusionGGML();
     if (sd_ctx->sd == NULL) {
         return NULL;
     }
@@ -585,11 +481,6 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     prompt = result_pair.second;
     LOG_DEBUG("prompt after extract and remove lora: \"%s\"", prompt.c_str());
 
-    int64_t t0 = ggml_time_ms();
-    sd_ctx->sd->apply_loras(lora_f2m);
-    int64_t t1 = ggml_time_ms();
-    LOG_INFO("apply_loras completed, taking %.2fs", (t1 - t0) * 1.0f / 1000);
-
     // Photo Maker
     std::string prompt_text_only;
     ggml_tensor* init_img = NULL;
@@ -597,7 +488,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     std::vector<bool> class_tokens_mask;
 
     // Get learned condition
-    t0               = ggml_time_ms();
+    int64_t t0       = ggml_time_ms();
     SDCondition cond = sd_ctx->sd->cond_stage_model->get_learned_condition(work_ctx,
                                                                            sd_ctx->sd->n_threads,
                                                                            prompt,
@@ -621,7 +512,7 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
                                                                      sd_ctx->sd->diffusion_model->get_adm_in_channels(),
                                                                      force_zero_embeddings);
     }
-    t1 = ggml_time_ms();
+    int64_t t1 = ggml_time_ms();
     LOG_INFO("get_learned_condition completed, taking %" PRId64 " ms", t1 - t0);
 
     if (sd_ctx->sd->free_params_immediately) {

@@ -125,26 +125,7 @@ typedef struct {
 
 typedef struct sd_ctx_t sd_ctx_t;
 
-SD_API sd_ctx_t* new_sd_ctx(const char* model_path,
-                            const char* clip_l_path,
-                            const char* t5xxl_path,
-                            const char* diffusion_model_path,
-                            const char* vae_path,
-                            const char* taesd_path,
-                            const char* control_net_path_c_str,
-                            const char* lora_model_dir,
-                            const char* embed_dir_c_str,
-                            const char* stacked_id_embed_dir_c_str,
-                            bool vae_decode_only,
-                            bool vae_tiling,
-                            bool free_params_immediately,
-                            int n_threads,
-                            enum sd_type_t wtype,
-                            enum rng_type_t rng_type,
-                            enum schedule_t s,
-                            bool keep_clip_on_cpu,
-                            bool keep_control_net_cpu,
-                            bool keep_vae_on_cpu);
+SD_API sd_ctx_t* new_sd_ctx(const char* model_path);
 
 SD_API void free_sd_ctx(sd_ctx_t* sd_ctx);
 SD_API void sd_ctx_set_result_callback(sd_ctx_t* sd_ctx, sd_result_cb_t cb, void* data);
