@@ -14,16 +14,14 @@
 
 class StableDiffusionGGML {
 public:
-    ggml_backend_t backend             = nullptr;  // general backend
-    ggml_backend_t clip_backend        = nullptr;
-    ggml_backend_t control_net_backend = nullptr;
-    ggml_backend_t vae_backend         = nullptr;
+    ggml_backend_t backend = nullptr;
 
     ggml_type conditioner_wtype     = GGML_TYPE_COUNT;
     ggml_type diffusion_model_wtype = GGML_TYPE_COUNT;
     ggml_type vae_wtype             = GGML_TYPE_COUNT;
 
     SDVersion version = VERSION_SDXL;
+    bool vae_tiling   = false;
 
     std::shared_ptr<RNG> rng = std::make_shared<PhiloxRNG>();
     int n_threads            = 10;
@@ -40,19 +38,10 @@ public:
     StableDiffusionGGML() = default;
 
     ~StableDiffusionGGML() {
-        if (clip_backend != backend) {
-            ggml_backend_free(clip_backend);
-        }
-        if (control_net_backend != backend) {
-            ggml_backend_free(control_net_backend);
-        }
-        if (vae_backend != backend) {
-            ggml_backend_free(vae_backend);
-        }
         ggml_backend_free(backend);
     }
 
-    bool load_from_file(const std::string& model_path) {
+    bool load_from_file(const std::string& model_path, bool vae_tiling_) {
         LOG_DEBUG("Using CUDA backend");
         backend = ggml_backend_cuda_init(0);
         if (!backend) {
@@ -60,6 +49,7 @@ public:
             return false;
         }
 
+        vae_tiling = vae_tiling_;
         ModelLoader model_loader;
 
         LOG_INFO("loading model from '%s'", model_path.c_str());
@@ -79,24 +69,17 @@ public:
         LOG_DEBUG("ggml tensor size = %d bytes", (int)sizeof(ggml_tensor));
 
         {
-            clip_backend = backend;
-
-            cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(clip_backend, conditioner_wtype, "", version);
-            diffusion_model  = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
-
+            cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(backend, conditioner_wtype, "", version);
             cond_stage_model->alloc_params_buffer();
             cond_stage_model->get_param_tensors(tensors);
 
+            diffusion_model = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
             diffusion_model->alloc_params_buffer();
             diffusion_model->get_param_tensors(tensors);
 
-            {
-                vae_backend = backend;
-
-                first_stage_model = std::make_shared<AutoEncoderKL>(vae_backend, vae_wtype, false, false, version);
-                first_stage_model->alloc_params_buffer();
-                first_stage_model->get_param_tensors(tensors, "first_stage_model");
-            }
+            first_stage_model = std::make_shared<AutoEncoderKL>(backend, vae_wtype, false, false, version);
+            first_stage_model->alloc_params_buffer();
+            first_stage_model->get_param_tensors(tensors, "first_stage_model");
         }
 
         // load weights
@@ -258,7 +241,7 @@ public:
                                                  decode ? (H * 8) : (H / 8),  // height
                                                  decode ? 3 : C,
                                                  x->ne[3]);  // channels
-        int64_t t0          = ggml_time_ms();
+
         {
             if (decode) {
                 ggml_tensor_scale(x, 1.0f / scale_factor);
@@ -266,7 +249,15 @@ public:
                 ggml_tensor_scale_input(x);
             }
 
-            first_stage_model->compute(n_threads, x, decode, &result);
+            if (vae_tiling && decode) {
+                auto on_tiling = [&](ggml_tensor* in, ggml_tensor* out, bool init) {
+                    first_stage_model->compute(n_threads, in, decode, &out);
+                };
+                sd_tiling(x, result, 8, 32, 0.5f, on_tiling);
+            } else {
+                first_stage_model->compute(n_threads, x, decode, &result);
+            }
+
             first_stage_model->free_compute_buffer();
 
             if (decode) {
@@ -274,8 +265,6 @@ public:
             }
         }
 
-        int64_t t1 = ggml_time_ms();
-        LOG_DEBUG("computing vae [mode: %s] graph completed, taking %.2fs", decode ? "DECODE" : "ENCODE", (t1 - t0) * 1.0f / 1000);
         if (decode) {
             ggml_tensor_clamp(result, 0.0f, 1.0f);
         }
@@ -334,7 +323,7 @@ struct sd_ctx_t {
     StableDiffusionGGML* sd = nullptr;
 };
 
-[[maybe_unused]] sd_ctx_t* new_sd_ctx(const char* model_path_c_str) {
+[[maybe_unused]] sd_ctx_t* new_sd_ctx(const char* model_path_c_str, bool vae_tiling_) {
     auto sd_ctx = (sd_ctx_t*)malloc(sizeof(sd_ctx_t));
     if (sd_ctx == nullptr) {
         return nullptr;
@@ -346,7 +335,7 @@ struct sd_ctx_t {
         return nullptr;
     }
 
-    if (!sd_ctx->sd->load_from_file(model_path)) {
+    if (!sd_ctx->sd->load_from_file(model_path, vae_tiling_)) {
         free_sd_ctx(sd_ctx);
         return nullptr;
     }
@@ -474,9 +463,9 @@ sd_image_t* generate_image(sd_ctx_t* sd_ctx,
     params.mem_size = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
     params.mem_size += width * height * 3 * sizeof(float);
     params.mem_size *= batch_count;
+    params.mem_size *= 100;
     params.mem_buffer = nullptr;
     params.no_alloc   = false;
-    // LOG_DEBUG("mem_size %u ", params.mem_size);
 
     struct ggml_context* work_ctx = ggml_init(params);
     if (!work_ctx) {

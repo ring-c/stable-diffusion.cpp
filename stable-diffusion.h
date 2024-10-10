@@ -125,7 +125,7 @@ typedef struct {
 
 typedef struct sd_ctx_t sd_ctx_t;
 
-[[maybe_unused]] SD_API sd_ctx_t* new_sd_ctx(const char* model_path);
+[[maybe_unused]] SD_API sd_ctx_t* new_sd_ctx(const char* model_path, bool vae_tiling_);
 
 SD_API void free_sd_ctx(sd_ctx_t* sd_ctx);
 [[maybe_unused]] SD_API void sd_ctx_set_result_callback(sd_ctx_t* sd_ctx, sd_result_cb_t cb, void* data);
