@@ -102,8 +102,7 @@ public:
         // load weights
         LOG_DEBUG("loading weights");
 
-        std::set<std::string> ignore_tensors;
-        bool success = model_loader.load_tensors(tensors, backend, ignore_tensors);
+        bool success = model_loader.load_tensors(tensors, backend, {});
         if (!success) {
             LOG_ERROR("load tensors from model loader failed");
             return false;
