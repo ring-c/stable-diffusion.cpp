@@ -67,14 +67,9 @@ struct FrozenCLIPEmbedderWithCustomWords : public Conditioner {
                 clip_skip = 2;
             }
         }
-        if (version == VERSION_SD1) {
-            text_model = std::make_shared<CLIPTextModelRunner>(backend, wtype, OPENAI_CLIP_VIT_L_14, clip_skip);
-        } else if (version == VERSION_SD2) {
-            text_model = std::make_shared<CLIPTextModelRunner>(backend, wtype, OPEN_CLIP_VIT_H_14, clip_skip);
-        } else if (version == VERSION_SDXL) {
-            text_model  = std::make_shared<CLIPTextModelRunner>(backend, wtype, OPENAI_CLIP_VIT_L_14, clip_skip, false);
-            text_model2 = std::make_shared<CLIPTextModelRunner>(backend, wtype, OPEN_CLIP_VIT_BIGG_14, clip_skip, false);
-        }
+
+        text_model  = std::make_shared<CLIPTextModelRunner>(backend, wtype, OPENAI_CLIP_VIT_L_14, clip_skip, false);
+        text_model2 = std::make_shared<CLIPTextModelRunner>(backend, wtype, OPEN_CLIP_VIT_BIGG_14, clip_skip, false);
     }
 
     void set_clip_skip(int clip_skip) {

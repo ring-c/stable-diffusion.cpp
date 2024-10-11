@@ -16,16 +16,12 @@ class StableDiffusionGGML {
 public:
     ggml_backend_t backend = nullptr;
 
-    ggml_type conditioner_wtype     = GGML_TYPE_COUNT;
-    ggml_type diffusion_model_wtype = GGML_TYPE_COUNT;
-    ggml_type vae_wtype             = GGML_TYPE_COUNT;
-
     SDVersion version = VERSION_SDXL;
     bool vae_tiling   = false;
 
     std::shared_ptr<RNG> rng = std::make_shared<PhiloxRNG>();
     int n_threads            = 10;
-    float scale_factor       = 0.18215f;
+    float scale_factor       = 0.13025f;
 
     std::shared_ptr<Conditioner> cond_stage_model;
     std::shared_ptr<DiffusionModel> diffusion_model;
@@ -42,7 +38,6 @@ public:
     }
 
     bool load_from_file(const std::string& model_path, bool vae_tiling_) {
-        LOG_DEBUG("Using CUDA backend");
         backend = ggml_backend_cuda_init(0);
         if (!backend) {
             LOG_ERROR("no backend");
@@ -52,38 +47,22 @@ public:
         vae_tiling = vae_tiling_;
         ModelLoader model_loader;
 
-        LOG_INFO("loading model from '%s'", model_path.c_str());
         if (!model_loader.init_from_file(model_path)) {
             LOG_ERROR("init model loader from file failed: '%s'", model_path.c_str());
+            return false;
         }
 
-        conditioner_wtype     = GGML_TYPE_F16;
-        diffusion_model_wtype = GGML_TYPE_F16;
-        vae_wtype             = GGML_TYPE_F32;
-        scale_factor          = 0.13025f;
+        cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(backend, GGML_TYPE_F16, "", version);
+        cond_stage_model->alloc_params_buffer();
+        cond_stage_model->get_param_tensors(tensors);
 
-        LOG_INFO("Conditioner weight type:     %s", ggml_type_name(conditioner_wtype));
-        LOG_INFO("Diffusion model weight type: %s", ggml_type_name(diffusion_model_wtype));
-        LOG_INFO("VAE weight type:             %s", ggml_type_name(vae_wtype));
+        diffusion_model = std::make_shared<UNetModel>(backend, GGML_TYPE_F16, version);
+        diffusion_model->alloc_params_buffer();
+        diffusion_model->get_param_tensors(tensors);
 
-        LOG_DEBUG("ggml tensor size = %d bytes", (int)sizeof(ggml_tensor));
-
-        {
-            cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(backend, conditioner_wtype, "", version);
-            cond_stage_model->alloc_params_buffer();
-            cond_stage_model->get_param_tensors(tensors);
-
-            diffusion_model = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
-            diffusion_model->alloc_params_buffer();
-            diffusion_model->get_param_tensors(tensors);
-
-            first_stage_model = std::make_shared<AutoEncoderKL>(backend, vae_wtype, false, false, version);
-            first_stage_model->alloc_params_buffer();
-            first_stage_model->get_param_tensors(tensors, "first_stage_model");
-        }
-
-        // load weights
-        LOG_DEBUG("loading weights");
+        first_stage_model = std::make_shared<AutoEncoderKL>(backend, GGML_TYPE_F32, false, false, version);
+        first_stage_model->alloc_params_buffer();
+        first_stage_model->get_param_tensors(tensors, "first_stage_model");
 
         bool success = model_loader.load_tensors(tensors, backend, {});
         if (!success) {
@@ -106,7 +85,6 @@ public:
             }
         }
 
-        LOG_DEBUG("finished loaded file");
         return true;
     }
 
