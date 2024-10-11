@@ -114,108 +114,6 @@ public:
     }
 };
 
-class AE3DConv : public Conv2d {
-public:
-    AE3DConv(int64_t in_channels,
-             int64_t out_channels,
-             std::pair<int, int> kernel_size,
-             int64_t video_kernel_size    = 3,
-             std::pair<int, int> stride   = {1, 1},
-             std::pair<int, int> padding  = {0, 0},
-             std::pair<int, int> dilation = {1, 1},
-             bool bias                    = true)
-        : Conv2d(in_channels, out_channels, kernel_size, stride, padding, dilation, bias) {
-        int64_t kernel_padding  = video_kernel_size / 2;
-        blocks["time_mix_conv"] = std::shared_ptr<GGMLBlock>(new Conv3dnx1x1(out_channels,
-                                                                             out_channels,
-                                                                             video_kernel_size,
-                                                                             1,
-                                                                             kernel_padding));
-    }
-
-    struct ggml_tensor* forward(struct ggml_context* ctx,
-                                struct ggml_tensor* x) {
-        // timesteps always None
-        // skip_video always False
-        // x: [N, IC, IH, IW]
-        // result: [N, OC, OH, OW]
-        auto time_mix_conv = std::dynamic_pointer_cast<Conv3dnx1x1>(blocks["time_mix_conv"]);
-
-        x = Conv2d::forward(ctx, x);
-        // timesteps = x.shape[0]
-        // x = rearrange(x, "(b t) c h w -> b c t h w", t=timesteps)
-        // x = conv3d(x)
-        // return rearrange(x, "b c t h w -> (b t) c h w")
-        int64_t T = x->ne[3];
-        int64_t B = x->ne[3] / T;
-        int64_t C = x->ne[2];
-        int64_t H = x->ne[1];
-        int64_t W = x->ne[0];
-
-        x = ggml_reshape_4d(ctx, x, W * H, C, T, B);           // (b t) c h w -> b t c (h w)
-        x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));  // b t c (h w) -> b c t (h w)
-        x = time_mix_conv->forward(ctx, x);                    // [B, OC, T, OH * OW]
-        x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));  // b c t (h w) -> b t c (h w)
-        x = ggml_reshape_4d(ctx, x, W, H, C, T * B);           // b t c (h w) -> (b t) c h w
-        return x;                                              // [B*T, OC, OH, OW]
-    }
-};
-
-class VideoResnetBlock : public ResnetBlock {
-protected:
-    void init_params(struct ggml_context* ctx, ggml_type wtype) {
-        params["mix_factor"] = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
-    }
-
-    float get_alpha() {
-        float alpha = ggml_backend_tensor_get_f32(params["mix_factor"]);
-        return sigmoid(alpha);
-    }
-
-public:
-    VideoResnetBlock(int64_t in_channels,
-                     int64_t out_channels,
-                     int video_kernel_size = 3)
-        : ResnetBlock(in_channels, out_channels) {
-        // merge_strategy is always learned
-        blocks["time_stack"] = std::shared_ptr<GGMLBlock>(new ResBlock(out_channels, 0, out_channels, {video_kernel_size, 1}, 3, false, true));
-    }
-
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
-        // x: [N, in_channels, h, w] aka [b*t, in_channels, h, w]
-        // return: [N, out_channels, h, w] aka [b*t, out_channels, h, w]
-        // t_emb is always None
-        // skip_video is always False
-        // timesteps is always None
-        auto time_stack = std::dynamic_pointer_cast<ResBlock>(blocks["time_stack"]);
-
-        x = ResnetBlock::forward(ctx, x);  // [N, out_channels, h, w]
-        // return x;
-
-        int64_t T = x->ne[3];
-        int64_t B = x->ne[3] / T;
-        int64_t C = x->ne[2];
-        int64_t H = x->ne[1];
-        int64_t W = x->ne[0];
-
-        x          = ggml_reshape_4d(ctx, x, W * H, C, T, B);           // (b t) c h w -> b t c (h w)
-        x          = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));  // b t c (h w) -> b c t (h w)
-        auto x_mix = x;
-
-        x = time_stack->forward(ctx, x);  // b t c (h w)
-
-        float alpha = get_alpha();
-        x           = ggml_add(ctx,
-                               ggml_scale(ctx, x, alpha),
-                               ggml_scale(ctx, x_mix, 1.0f - alpha));
-
-        x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));  // b c t (h w) -> b t c (h w)
-        x = ggml_reshape_4d(ctx, x, W, H, C, T * B);           // b t c (h w) -> (b t) c h w
-
-        return x;
-    }
-};
-
 // ldm.modules.diffusionmodules.model.Encoder
 class Encoder : public GGMLBlock {
 protected:
@@ -328,20 +226,11 @@ protected:
                                                     std::pair<int, int> kernel_size,
                                                     std::pair<int, int> stride  = {1, 1},
                                                     std::pair<int, int> padding = {0, 0}) {
-        if (video_decoder) {
-            return std::shared_ptr<GGMLBlock>(new AE3DConv(in_channels, out_channels, kernel_size, video_kernel_size, stride, padding));
-        } else {
-            return std::shared_ptr<GGMLBlock>(new Conv2d(in_channels, out_channels, kernel_size, stride, padding));
-        }
+        return std::shared_ptr<GGMLBlock>(new Conv2d(in_channels, out_channels, kernel_size, stride, padding));
     }
 
-    virtual std::shared_ptr<GGMLBlock> get_resnet_block(int64_t in_channels,
-                                                        int64_t out_channels) {
-        if (video_decoder) {
-            return std::shared_ptr<GGMLBlock>(new VideoResnetBlock(in_channels, out_channels, video_kernel_size));
-        } else {
-            return std::shared_ptr<GGMLBlock>(new ResnetBlock(in_channels, out_channels));
-        }
+    virtual std::shared_ptr<GGMLBlock> get_resnet_block(int64_t in_channels, int64_t out_channels) {
+        return std::shared_ptr<GGMLBlock>(new ResnetBlock(in_channels, out_channels));
     }
 
 public:
@@ -560,56 +449,9 @@ struct AutoEncoderKL : public GGMLRunner {
         auto get_graph = [&]() -> struct ggml_cgraph* {
             return build_graph(z, decode_graph);
         };
-        // ggml_set_f32(z, 0.5f);
-        // print_ggml_tensor(z);
+
         GGMLRunner::compute(get_graph, n_threads, true, output, output_ctx);
     }
-
-    void test() {
-        struct ggml_init_params params;
-        params.mem_size   = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
-        params.mem_buffer = NULL;
-        params.no_alloc   = false;
-
-        struct ggml_context* work_ctx = ggml_init(params);
-        GGML_ASSERT(work_ctx != NULL);
-
-        {
-            // CPU, x{1, 3, 64, 64}: Pass
-            // CUDA, x{1, 3, 64, 64}: Pass, but sill get wrong result for some image, may be due to interlnal nan
-            // CPU, x{2, 3, 64, 64}: Wrong result
-            // CUDA, x{2, 3, 64, 64}: Wrong result, and different from CPU result
-            auto x = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 64, 64, 3, 2);
-            ggml_set_f32(x, 0.5f);
-            print_ggml_tensor(x);
-            struct ggml_tensor* out = NULL;
-
-            int t0 = ggml_time_ms();
-            compute(8, x, false, &out, work_ctx);
-            int t1 = ggml_time_ms();
-
-            print_ggml_tensor(out);
-            LOG_DEBUG("encode test done in %dms", t1 - t0);
-        }
-
-        if (false) {
-            // CPU, z{1, 4, 8, 8}: Pass
-            // CUDA, z{1, 4, 8, 8}: Pass
-            // CPU, z{3, 4, 8, 8}: Wrong result
-            // CUDA, z{3, 4, 8, 8}: Wrong result, and different from CPU result
-            auto z = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 8, 8, 4, 1);
-            ggml_set_f32(z, 0.5f);
-            print_ggml_tensor(z);
-            struct ggml_tensor* out = NULL;
-
-            int t0 = ggml_time_ms();
-            compute(8, z, true, &out, work_ctx);
-            int t1 = ggml_time_ms();
-
-            print_ggml_tensor(out);
-            LOG_DEBUG("decode test done in %dms", t1 - t0);
-        }
-    };
 };
 
 #endif

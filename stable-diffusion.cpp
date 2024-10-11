@@ -23,8 +23,8 @@ public:
     int n_threads            = 10;
     float scale_factor       = 0.13025f;
 
-    std::shared_ptr<Conditioner> cond_stage_model;
-    std::shared_ptr<DiffusionModel> diffusion_model;
+    std::shared_ptr<FrozenCLIPEmbedderWithCustomWords> cond_stage_model;
+    std::shared_ptr<UNetModel> diffusion_model;
     std::shared_ptr<AutoEncoderKL> first_stage_model;
 
     std::map<std::string, struct ggml_tensor*> tensors;

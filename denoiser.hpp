@@ -42,218 +42,6 @@ struct DiscreteSchedule : SigmaSchedule {
     }
 };
 
-struct ExponentialSchedule : SigmaSchedule {
-    std::vector<float> get_sigmas(uint32_t n, float sigma_min, float sigma_max, t_to_sigma_t t_to_sigma) {
-        std::vector<float> sigmas;
-
-        // Calculate step size
-        float log_sigma_min = std::log(sigma_min);
-        float log_sigma_max = std::log(sigma_max);
-        float step = (log_sigma_max - log_sigma_min) / (n - 1);
-
-        // Fill sigmas with exponential values
-        for (uint32_t i = 0; i < n; ++i) {
-            float sigma = std::exp(log_sigma_max - step * i);
-            sigmas.push_back(sigma);
-        }
-
-        sigmas.push_back(0.0f);
-
-        return sigmas;
-    }
-};
-
-/* interp and linear_interp adapted from dpilger26's NumCpp library:
- * https://github.com/dpilger26/NumCpp/tree/5e40aab74d14e257d65d3dc385c9ff9e2120c60e */
-constexpr double interp(double left, double right, double perc) noexcept {
-    return (left * (1. - perc)) + (right * perc);
-}
-
-/* This will make the assumption that the reference x and y values are
- * already sorted in ascending order because they are being generated as
- * such in the calling function */
-std::vector<double> linear_interp(std::vector<float> new_x,
-                                  const std::vector<float> ref_x,
-                                  const std::vector<float> ref_y) {
-    const size_t len_x = new_x.size();
-    size_t i           = 0;
-    size_t j           = 0;
-    std::vector<double> new_y(len_x);
-
-    if (ref_x.size() != ref_y.size()) {
-        LOG_ERROR("Linear Interpolation Failed: length mismatch");
-        return new_y;
-    }
-
-    /* Adjusted bounds checking to ensure new_x is within ref_x range */
-    if (new_x[0] < ref_x[0]) {
-        new_x[0] = ref_x[0];
-    }
-    if (new_x.back() > ref_x.back()) {
-        new_x.back() = ref_x.back();
-    }
-
-    while (i < len_x) {
-        if ((ref_x[j] > new_x[i]) || (new_x[i] > ref_x[j + 1])) {
-            j++;
-            continue;
-        }
-
-        const double perc = static_cast<double>(new_x[i] - ref_x[j]) / static_cast<double>(ref_x[j + 1] - ref_x[j]);
-
-        new_y[i] = interp(ref_y[j], ref_y[j + 1], perc);
-        i++;
-    }
-
-    return new_y;
-}
-
-std::vector<float> linear_space(const float start, const float end, const size_t num_points) {
-    std::vector<float> result(num_points);
-    const float inc = (end - start) / (static_cast<float>(num_points - 1));
-
-    if (num_points > 0) {
-        result[0] = start;
-
-        for (size_t i = 1; i < num_points; i++) {
-            result[i] = result[i - 1] + inc;
-        }
-    }
-
-    return result;
-}
-
-std::vector<float> log_linear_interpolation(std::vector<float> sigma_in,
-                                            const size_t new_len) {
-    const size_t s_len        = sigma_in.size();
-    std::vector<float> x_vals = linear_space(0.f, 1.f, s_len);
-    std::vector<float> y_vals(s_len);
-
-    /* Reverses the input array to be ascending instead of descending,
-     * also hits it with a log, it is log-linear interpolation after all */
-    for (size_t i = 0; i < s_len; i++) {
-        y_vals[i] = std::log(sigma_in[s_len - i - 1]);
-    }
-
-    std::vector<float> new_x_vals  = linear_space(0.f, 1.f, new_len);
-    std::vector<double> new_y_vals = linear_interp(new_x_vals, x_vals, y_vals);
-    std::vector<float> results(new_len);
-
-    for (size_t i = 0; i < new_len; i++) {
-        results[i] = static_cast<float>(std::exp(new_y_vals[new_len - i - 1]));
-    }
-
-    return results;
-}
-
-/*
-https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/howto.html
-*/
-struct AYSSchedule : SigmaSchedule {
-    std::vector<float> get_sigmas(uint32_t n, float sigma_min, float sigma_max, t_to_sigma_t t_to_sigma) {
-        const std::vector<float> noise_levels[] = {
-            /* SD1.5 */
-            {14.6146412293f, 6.4745760956f, 3.8636745985f, 2.6946151520f,
-             1.8841921177f, 1.3943805092f, 0.9642583904f, 0.6523686016f,
-             0.3977456272f, 0.1515232662f, 0.0291671582f},
-            /* SDXL */
-            {14.6146412293f, 6.3184485287f, 3.7681790315f, 2.1811480769f,
-             1.3405244945f, 0.8620721141f, 0.5550693289f, 0.3798540708f,
-             0.2332364134f, 0.1114188177f, 0.0291671582f},
-            /* SVD */
-            {700.00f, 54.5f, 15.886f, 7.977f, 4.248f, 1.789f, 0.981f, 0.403f,
-             0.173f, 0.034f, 0.002f},
-        };
-
-        std::vector<float> inputs;
-        std::vector<float> results(n + 1);
-
-        switch (version) {
-            case VERSION_SD2: /* fallthrough */
-                LOG_WARN("AYS not designed for SD2.X models");
-            case VERSION_SD1:
-                LOG_INFO("AYS using SD1.5 noise levels");
-                inputs = noise_levels[0];
-                break;
-            case VERSION_SDXL:
-                LOG_INFO("AYS using SDXL noise levels");
-                inputs = noise_levels[1];
-                break;
-            case VERSION_SVD:
-                LOG_INFO("AYS using SVD noise levels");
-                inputs = noise_levels[2];
-                break;
-            default:
-                LOG_ERROR("Version not compatable with AYS scheduler");
-                return results;
-        }
-
-        /* Stretches those pre-calculated reference levels out to the desired
-         * size using log-linear interpolation */
-        if ((n + 1) != inputs.size()) {
-            results = log_linear_interpolation(inputs, n + 1);
-        } else {
-            results = inputs;
-        }
-
-        /* Not sure if this is strictly neccessary */
-        results[n] = 0.0f;
-
-        return results;
-    }
-};
-
-/*
- * GITS Scheduler: https://github.com/zju-pi/diff-sampler/tree/main/gits-main
-*/
-struct GITSSchedule : SigmaSchedule {
-    std::vector<float> get_sigmas(uint32_t n, float sigma_min, float sigma_max, t_to_sigma_t t_to_sigma) {
-        if (sigma_max <= 0.0f) {
-            return std::vector<float>{};
-        }
-
-        std::vector<float> sigmas;
-
-        // Assume coeff is provided (replace 1.20 with your dynamic coeff)
-        float coeff = 1.20f;  // Default coefficient
-        // Normalize coeff to the closest value in the array (0.80 to 1.50)
-        coeff = std::round(coeff * 20.0f) / 20.0f;  // Round to the nearest 0.05
-        // Calculate the index based on the coefficient
-        int index = static_cast<int>((coeff - 0.80f) / 0.05f);
-        // Ensure the index is within bounds
-        index = std::max(0, std::min(index, static_cast<int>(GITS_NOISE.size() - 1)));
-        const std::vector<std::vector<float>>& selected_noise = *GITS_NOISE[index];
-
-        if (n <= 20) {
-            sigmas = (selected_noise)[n - 2];
-        } else {
-            sigmas = log_linear_interpolation(selected_noise.back(), n + 1);
-        }
-
-        sigmas[n] = 0.0f;
-        return sigmas;
-    }
-};
-
-struct KarrasSchedule : SigmaSchedule {
-    std::vector<float> get_sigmas(uint32_t n, float sigma_min, float sigma_max, t_to_sigma_t t_to_sigma) {
-        // These *COULD* be function arguments here,
-        // but does anybody ever bother to touch them?
-        float rho = 7.f;
-
-        std::vector<float> result(n + 1);
-
-        float min_inv_rho = pow(sigma_min, (1.f / rho));
-        float max_inv_rho = pow(sigma_max, (1.f / rho));
-        for (uint32_t i = 0; i < n; i++) {
-            // Eq. (5) from Karras et al 2022
-            result[i] = pow(max_inv_rho + (float)i / ((float)n - 1.f) * (min_inv_rho - max_inv_rho), rho);
-        }
-        result[n] = 0.;
-        return result;
-    }
-};
-
 struct Denoiser {
     std::shared_ptr<SigmaSchedule> schedule                                                  = std::make_shared<DiscreteSchedule>();
     virtual float sigma_min()                                                                = 0;
@@ -333,135 +121,6 @@ struct CompVisDenoiser : public Denoiser {
     }
 
     ggml_tensor* inverse_noise_scaling(float sigma, ggml_tensor* latent) {
-        return latent;
-    }
-};
-
-struct CompVisVDenoiser : public CompVisDenoiser {
-    std::vector<float> get_scalings(float sigma) {
-        float c_skip = sigma_data * sigma_data / (sigma * sigma + sigma_data * sigma_data);
-        float c_out  = -sigma * sigma_data / std::sqrt(sigma * sigma + sigma_data * sigma_data);
-        float c_in   = 1.0f / std::sqrt(sigma * sigma + sigma_data * sigma_data);
-        return {c_skip, c_out, c_in};
-    }
-};
-
-float time_snr_shift(float alpha, float t) {
-    if (alpha == 1.0f) {
-        return t;
-    }
-    return alpha * t / (1 + (alpha - 1) * t);
-}
-
-struct DiscreteFlowDenoiser : public Denoiser {
-    float sigmas[TIMESTEPS];
-    float shift = 3.0f;
-
-    float sigma_data = 1.0f;
-
-    DiscreteFlowDenoiser() {
-        set_parameters();
-    }
-
-    void set_parameters() {
-        for (int i = 1; i < TIMESTEPS + 1; i++) {
-            sigmas[i - 1] = t_to_sigma(i);
-        }
-    }
-
-    float sigma_min() {
-        return sigmas[0];
-    }
-
-    float sigma_max() {
-        return sigmas[TIMESTEPS - 1];
-    }
-
-    float sigma_to_t(float sigma) {
-        return sigma * 1000.f;
-    }
-
-    float t_to_sigma(float t) {
-        t = t + 1;
-        return time_snr_shift(shift, t / 1000.f);
-    }
-
-    std::vector<float> get_scalings(float sigma) {
-        float c_skip = 1.0f;
-        float c_out  = -sigma;
-        float c_in   = 1.0f;
-        return {c_skip, c_out, c_in};
-    }
-
-    // this function will modify noise/latent
-    ggml_tensor* noise_scaling(float sigma, ggml_tensor* noise, ggml_tensor* latent) {
-        ggml_tensor_scale(noise, sigma);
-        ggml_tensor_scale(latent, 1.0f - sigma);
-        ggml_tensor_add(latent, noise);
-        return latent;
-    }
-
-    ggml_tensor* inverse_noise_scaling(float sigma, ggml_tensor* latent) {
-        ggml_tensor_scale(latent, 1.0f / (1.0f - sigma));
-        return latent;
-    }
-};
-
-float flux_time_shift(float mu, float sigma, float t) {
-    return std::exp(mu) / (std::exp(mu) + std::pow((1.0 / t - 1.0), sigma));
-}
-
-struct FluxFlowDenoiser : public Denoiser {
-    float sigmas[TIMESTEPS];
-    float shift = 1.15f;
-
-    float sigma_data = 1.0f;
-
-    FluxFlowDenoiser(float shift = 1.15f) {
-        set_parameters(shift);
-    }
-
-    void set_parameters(float shift = 1.15f) {
-        this->shift = shift;
-        for (int i = 1; i < TIMESTEPS + 1; i++) {
-            sigmas[i - 1] = t_to_sigma(i / TIMESTEPS * TIMESTEPS);
-        }
-    }
-
-    float sigma_min() {
-        return sigmas[0];
-    }
-
-    float sigma_max() {
-        return sigmas[TIMESTEPS - 1];
-    }
-
-    float sigma_to_t(float sigma) {
-        return sigma;
-    }
-
-    float t_to_sigma(float t) {
-        t = t + 1;
-        return flux_time_shift(shift, 1.0f, t / TIMESTEPS);
-    }
-
-    std::vector<float> get_scalings(float sigma) {
-        float c_skip = 1.0f;
-        float c_out  = -sigma;
-        float c_in   = 1.0f;
-        return {c_skip, c_out, c_in};
-    }
-
-    // this function will modify noise/latent
-    ggml_tensor* noise_scaling(float sigma, ggml_tensor* noise, ggml_tensor* latent) {
-        ggml_tensor_scale(noise, sigma);
-        ggml_tensor_scale(latent, 1.0f - sigma);
-        ggml_tensor_add(latent, noise);
-        return latent;
-    }
-
-    ggml_tensor* inverse_noise_scaling(float sigma, ggml_tensor* latent) {
-        ggml_tensor_scale(latent, 1.0f / (1.0f - sigma));
         return latent;
     }
 };
@@ -823,24 +482,24 @@ static void sample_k_diffusion(sample_method_t method,
         } break;
         case IPNDM:  // iPNDM sampler from https://github.com/zju-pi/diff-sampler/tree/main/diff-solvers-main
         {
-            int max_order = 4;
+            int max_order       = 4;
             ggml_tensor* x_next = x;
             std::vector<ggml_tensor*> buffer_model;
 
             for (int i = 0; i < steps; i++) {
-                float sigma = sigmas[i];
+                float sigma      = sigmas[i];
                 float sigma_next = sigmas[i + 1];
 
                 ggml_tensor* x_cur = x_next;
-                float* vec_x_cur = (float*)x_cur->data;
-                float* vec_x_next = (float*)x_next->data;
+                float* vec_x_cur   = (float*)x_cur->data;
+                float* vec_x_next  = (float*)x_next->data;
 
                 // Denoising step
                 ggml_tensor* denoised = model(x_cur, sigma, i + 1);
-                float* vec_denoised = (float*)denoised->data;
+                float* vec_denoised   = (float*)denoised->data;
                 // d_cur = (x_cur - denoised) / sigma
                 struct ggml_tensor* d_cur = ggml_dup_tensor(work_ctx, x_cur);
-                float* vec_d_cur = (float*)d_cur->data;
+                float* vec_d_cur          = (float*)d_cur->data;
 
                 for (int j = 0; j < ggml_nelements(d_cur); j++) {
                     vec_d_cur[j] = (vec_x_cur[j] - vec_denoised[j]) / sigma;
@@ -857,34 +516,31 @@ static void sample_k_diffusion(sample_method_t method,
                         break;
 
                     case 2:  // Use one history point
-                        {
-                            float* vec_d_prev1 = (float*)buffer_model.back()->data;
-                            for (int j = 0; j < ggml_nelements(x_next); j++) {
-                                vec_x_next[j] = vec_x_cur[j] + (sigma_next - sigma) * (3 * vec_d_cur[j] - vec_d_prev1[j]) / 2;
-                            }
+                    {
+                        float* vec_d_prev1 = (float*)buffer_model.back()->data;
+                        for (int j = 0; j < ggml_nelements(x_next); j++) {
+                            vec_x_next[j] = vec_x_cur[j] + (sigma_next - sigma) * (3 * vec_d_cur[j] - vec_d_prev1[j]) / 2;
                         }
-                        break;
+                    } break;
 
                     case 3:  // Use two history points
-                        {
-                            float* vec_d_prev1 = (float*)buffer_model.back()->data;
-                            float* vec_d_prev2 = (float*)buffer_model[buffer_model.size() - 2]->data;
-                            for (int j = 0; j < ggml_nelements(x_next); j++) {
-                                vec_x_next[j] = vec_x_cur[j] + (sigma_next - sigma) * (23 * vec_d_cur[j] - 16 * vec_d_prev1[j] + 5 * vec_d_prev2[j]) / 12;
-                            }
+                    {
+                        float* vec_d_prev1 = (float*)buffer_model.back()->data;
+                        float* vec_d_prev2 = (float*)buffer_model[buffer_model.size() - 2]->data;
+                        for (int j = 0; j < ggml_nelements(x_next); j++) {
+                            vec_x_next[j] = vec_x_cur[j] + (sigma_next - sigma) * (23 * vec_d_cur[j] - 16 * vec_d_prev1[j] + 5 * vec_d_prev2[j]) / 12;
                         }
-                        break;
+                    } break;
 
                     case 4:  // Use three history points
-                        {
-                            float* vec_d_prev1 = (float*)buffer_model.back()->data;
-                            float* vec_d_prev2 = (float*)buffer_model[buffer_model.size() - 2]->data;
-                            float* vec_d_prev3 = (float*)buffer_model[buffer_model.size() - 3]->data;
-                            for (int j = 0; j < ggml_nelements(x_next); j++) {
-                                vec_x_next[j] = vec_x_cur[j] + (sigma_next - sigma) * (55 * vec_d_cur[j] - 59 * vec_d_prev1[j] + 37 * vec_d_prev2[j] - 9 * vec_d_prev3[j]) / 24;
-                            }
+                    {
+                        float* vec_d_prev1 = (float*)buffer_model.back()->data;
+                        float* vec_d_prev2 = (float*)buffer_model[buffer_model.size() - 2]->data;
+                        float* vec_d_prev3 = (float*)buffer_model[buffer_model.size() - 3]->data;
+                        for (int j = 0; j < ggml_nelements(x_next); j++) {
+                            vec_x_next[j] = vec_x_cur[j] + (sigma_next - sigma) * (55 * vec_d_cur[j] - 59 * vec_d_prev1[j] + 37 * vec_d_prev2[j] - 9 * vec_d_prev3[j]) / 24;
                         }
-                        break;
+                    } break;
                 }
 
                 // Manage buffer_model
@@ -906,27 +562,27 @@ static void sample_k_diffusion(sample_method_t method,
             ggml_tensor* x_next = x;
 
             for (int i = 0; i < steps; i++) {
-                float sigma = sigmas[i];
+                float sigma  = sigmas[i];
                 float t_next = sigmas[i + 1];
 
                 // Denoising step
-                ggml_tensor* denoised = model(x, sigma, i + 1);
-                float* vec_denoised = (float*)denoised->data;
+                ggml_tensor* denoised     = model(x, sigma, i + 1);
+                float* vec_denoised       = (float*)denoised->data;
                 struct ggml_tensor* d_cur = ggml_dup_tensor(work_ctx, x);
-                float* vec_d_cur = (float*)d_cur->data;
-                float* vec_x = (float*)x->data;
+                float* vec_d_cur          = (float*)d_cur->data;
+                float* vec_x              = (float*)x->data;
 
                 // d_cur = (x - denoised) / sigma
                 for (int j = 0; j < ggml_nelements(d_cur); j++) {
                     vec_d_cur[j] = (vec_x[j] - vec_denoised[j]) / sigma;
                 }
 
-                int order = std::min(max_order, i + 1);
-                float h_n = t_next - sigma;
+                int order   = std::min(max_order, i + 1);
+                float h_n   = t_next - sigma;
                 float h_n_1 = (i > 0) ? (sigma - sigmas[i - 1]) : h_n;
 
                 switch (order) {
-                    case 1:  // First Euler step 
+                    case 1:  // First Euler step
                         for (int j = 0; j < ggml_nelements(x_next); j++) {
                             vec_x[j] += vec_d_cur[j] * h_n;
                         }
@@ -941,7 +597,7 @@ static void sample_k_diffusion(sample_method_t method,
                     }
 
                     case 3: {
-                        float h_n_2 = (i > 1) ? (sigmas[i - 1] - sigmas[i - 2]) : h_n_1;
+                        float h_n_2        = (i > 1) ? (sigmas[i - 1] - sigmas[i - 2]) : h_n_1;
                         float* vec_d_prev1 = (float*)buffer_model.back()->data;
                         float* vec_d_prev2 = (buffer_model.size() > 1) ? (float*)buffer_model[buffer_model.size() - 2]->data : vec_d_prev1;
                         for (int j = 0; j < ggml_nelements(x_next); j++) {
@@ -951,8 +607,8 @@ static void sample_k_diffusion(sample_method_t method,
                     }
 
                     case 4: {
-                        float h_n_2 = (i > 1) ? (sigmas[i - 1] - sigmas[i - 2]) : h_n_1;
-                        float h_n_3 = (i > 2) ? (sigmas[i - 2] - sigmas[i - 3]) : h_n_2;
+                        float h_n_2        = (i > 1) ? (sigmas[i - 1] - sigmas[i - 2]) : h_n_1;
+                        float h_n_3        = (i > 2) ? (sigmas[i - 2] - sigmas[i - 3]) : h_n_2;
                         float* vec_d_prev1 = (float*)buffer_model.back()->data;
                         float* vec_d_prev2 = (buffer_model.size() > 1) ? (float*)buffer_model[buffer_model.size() - 2]->data : vec_d_prev1;
                         float* vec_d_prev3 = (buffer_model.size() > 2) ? (float*)buffer_model[buffer_model.size() - 3]->data : vec_d_prev2;
