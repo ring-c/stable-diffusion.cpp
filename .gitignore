@@ -3,7 +3,6 @@ test/
 .vscode/
 .cache/
 *.swp
-.vscode/
 *.bat
 *.bin
 *.exe
@@ -11,3 +10,5 @@ test/
 output*.png
 models*
 *.log
+.idea
+cmake-build-debug/
